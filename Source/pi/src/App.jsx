@@ -16,6 +16,11 @@ export class App extends React.Component {
       connected: false
     }
 
+    this.setting = {
+      input:1,
+      meIndex:1,
+    }
+
 
     this.pluginAction = null
     this.uuid = ''

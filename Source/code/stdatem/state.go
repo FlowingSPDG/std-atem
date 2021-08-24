@@ -1,7 +1,8 @@
 package stdatem
 
+// state ATEM State
 type state struct {
-	Preview   int  `json:"preview"`
-	Program   int  `json:"program"`
-	Connected bool `json:"connected"`
+	Preview   uint16 `json:"preview"`
+	Program   uint16 `json:"program"`
+	Connected bool   `json:"connected"`
 }
