@@ -7,8 +7,9 @@ import (
 
 // SD button setting
 type buttonSetting struct {
-	input   uint16
-	meIndex uint8
+	input    uint16
+	meIndex  uint8
+	atemName string // Name of the ATEM instance this button controls
 }
 
 type buttons struct {
