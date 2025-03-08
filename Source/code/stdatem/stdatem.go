@@ -2,148 +2,101 @@ package stdatem
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/FlowingSPDG/go-atem"
 	"github.com/FlowingSPDG/streamdeck"
+	"github.com/puzpuzpuz/xsync"
+	"golang.org/x/xerrors"
 )
-
-// ATEMInstance represents a single ATEM connection
-type ATEMInstance struct {
-	client      *atem.Atem
-	config      ATEMHost
-	state       state
-	reconnectCh chan struct{}
-}
 
 // App Main Engine
 type App struct {
-	buttons  buttons                  // Setting per context(button)
-	sd       *streamdeck.Client       // StreamDeck Client
-	atems    map[string]*ATEMInstance // ATEM Clients mapped by IP
-	atemsMux sync.RWMutex             // Mutex for ATEM clients map
+	atems *atems             // Setting per context(button)
+	sd    *streamdeck.Client // StreamDeck Client
 }
 
 // NewApp Initiate App main engine
-func NewApp(ctx context.Context, cfg Config) (*App, error) {
+func NewApp(ctx context.Context) (*App, error) {
 	app := &App{
-		buttons: buttons{
-			m: &sync.Map{},
+		atems: &atems{
+			m: xsync.NewMapOf[*ATEMInstance](),
 		},
-		atems: make(map[string]*ATEMInstance),
 	}
 
 	// Setup SD
-	params, err := streamdeck.ParseRegistrationParams(cfg.Params)
+	params, err := streamdeck.ParseRegistrationParams(os.Args)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("failed to parse registration params: %w", err)
 	}
 	app.sd = streamdeck.NewClient(ctx, params)
 	app.setupSD()
-
-	// Setup ATEMs
-	for _, host := range cfg.ATEMHosts {
-		if err := app.addATEMHost(ctx, host, cfg.Debug); err != nil {
-			return nil, err
-		}
-	}
 
 	return app, nil
 }
 
 // addATEMHost adds a new ATEM host and sets up its connection
-func (a *App) addATEMHost(ctx context.Context, host ATEMHost, debug bool) error {
+func (a *App) addATEMHost(ctx context.Context, sdcontext string, host *ATEMInstance, debug bool) error {
 	instance := &ATEMInstance{
-		client:      atem.Create(host.IP, debug),
-		config:      host,
+		client:      atem.Create(host.client.Ip, debug),
 		reconnectCh: make(chan struct{}, 1),
 	}
 
-	a.atemsMux.Lock()
-	a.atems[host.IP] = instance
-	a.atemsMux.Unlock()
+	a.atems.Store(sdcontext, instance)
 
 	instance.client.On("connected", func() {
-		a.atemsMux.RLock()
-		instance, exists := a.atems[host.IP]
-		a.atemsMux.RUnlock()
-
-		if !exists {
-			return
-		}
-
-		instance.state = state{
-			Preview:   instance.client.PreviewInput.Index,
-			Program:   instance.client.ProgramInput.Index,
-			Connected: instance.client.Connected(),
+		if instance, ok := a.atems.Load(host.client.Ip); ok {
+			instance.state = state{
+				Preview:   instance.client.PreviewInput.Index,
+				Program:   instance.client.ProgramInput.Index,
+				Connected: instance.client.Connected(),
+			}
 		}
 	})
 
 	instance.client.On("closed", func() {
-		a.atemsMux.RLock()
-		instance, exists := a.atems[host.IP]
-		a.atemsMux.RUnlock()
+		if instance, ok := a.atems.Load(host.client.Ip); ok {
+			instance.state.Connected = instance.client.Connected()
 
-		if !exists {
-			return
-		}
-
-		instance.state.Connected = instance.client.Connected()
-
-		// Trigger reconnection if enabled
-		if instance.config.AutoReconnect {
+			// Trigger reconnection
 			select {
 			case instance.reconnectCh <- struct{}{}:
+			case <-ctx.Done():
+				return
 			default:
 			}
 		}
 	})
 
-	// Start reconnection goroutine if auto-reconnect is enabled
-	if host.AutoReconnect {
-		go a.reconnectionLoop(ctx, host.IP)
-	}
+	// Start reconnection goroutine
+	go a.reconnectionLoop(ctx, host.client.Ip)
 
 	return nil
 }
 
 // Run Run Background Process.
-func (a *App) Run() error {
-	return a.sd.Run()
-}
-
-// ConnectATEM Connect to all configured ATEM hosts.
-func (a *App) ConnectATEM() error {
-	a.atemsMux.RLock()
-	defer a.atemsMux.RUnlock()
-
-	for _, instance := range a.atems {
-		if err := instance.client.Connect(); err != nil {
-			return err
-		}
-	}
-	return nil
+func (a *App) Run(ctx context.Context) error {
+	return a.sd.Run(ctx)
 }
 
 // setup StreamDeck Client
 func (a *App) setupSD() {
 	prv := a.sd.Action(SetPreviewAction)
 	prv.RegisterHandler(streamdeck.KeyDown, a.PRVKeyDownHandler)
+	prv.RegisterHandler(streamdeck.WillAppear, a.PRVWillAppearHandler)
 
 	pgm := a.sd.Action(SetProgramAction)
 	pgm.RegisterHandler(streamdeck.KeyDown, a.PGMKeyDownHandler)
+	pgm.RegisterHandler(streamdeck.WillAppear, a.PGMWillAppearHandler)
 }
 
 // reconnectionLoop handles automatic reconnection for a specific ATEM host
 func (a *App) reconnectionLoop(ctx context.Context, ip string) {
-	a.atemsMux.RLock()
-	instance, exists := a.atems[ip]
-	a.atemsMux.RUnlock()
-
-	if !exists {
+	instance, ok := a.atems.Load(ip)
+	if !ok {
 		return
 	}
 
@@ -165,84 +118,84 @@ func (a *App) reconnectionLoop(ctx context.Context, ip string) {
 	}
 }
 
-// GetATEMByContext returns the ATEM instance associated with the button context
-func (a *App) GetATEMByContext(ctx string) (*ATEMInstance, error) {
-	s, err := a.buttons.Load(ctx)
-	if err != nil {
-		return nil, err
+// PRVKeyDownHandler Set ATEM PRV
+func (a *App) PRVKeyDownHandler(ctx context.Context, client *streamdeck.Client, event streamdeck.Event) error {
+	var payload streamdeck.KeyDownPayload[PreviewPropertyInspector]
+	if err := json.Unmarshal(event.Payload, &payload); err != nil {
+		return xerrors.Errorf("failed to unmarshal payload: %w", err)
 	}
 
-	a.atemsMux.RLock()
-	defer a.atemsMux.RUnlock()
+	instance, ok := a.atems.Load(event.Context)
+	if !ok {
+		return xerrors.New("ATEM not found")
+	}
 
-	// Find the ATEM instance for this button
-	for _, instance := range a.atems {
-		if instance.config.Name == s.atemName {
-			return instance, nil
+	instance.client.SetPreviewInput(atem.VideoInputType(payload.Settings.Input), uint8(payload.Settings.Input))
+	return nil
+}
+
+// PRVWillAppearHandler Set ATEM PRV
+func (a *App) PRVWillAppearHandler(ctx context.Context, client *streamdeck.Client, event streamdeck.Event) error {
+	var payload streamdeck.WillAppearPayload[PreviewPropertyInspector]
+	if err := json.Unmarshal(event.Payload, &payload); err != nil {
+		return xerrors.Errorf("failed to unmarshal payload: %w", err)
+	}
+
+	if _, ok := a.atems.Load(event.Context); !ok {
+		// initialize new instance
+		if err := a.addATEMHost(ctx, event.Context, &ATEMInstance{
+			client: atem.Create(payload.Settings.client.Ip, true),
+		}, true); err != nil {
+			return xerrors.Errorf("failed to add ATEM host: %w", err)
 		}
 	}
 
-	return nil, fmt.Errorf("no ATEM found for context %s", ctx)
-}
-
-// PRVKeyDownHandler Set ATEM PRV
-func (a *App) PRVKeyDownHandler(ctx context.Context, client *streamdeck.Client, event streamdeck.Event) error {
-	instance, err := a.GetATEMByContext(event.Context)
-	if err != nil {
-		return err
-	}
-
-	s, err := a.buttons.Load(event.Context)
-	if err != nil {
-		return err
-	}
-
-	instance.client.SetPreviewInput(atem.VideoInputType(s.input), uint8(s.input))
 	return nil
 }
 
 // PGMKeyDownHandler Set ATEM PGM
 func (a *App) PGMKeyDownHandler(ctx context.Context, client *streamdeck.Client, event streamdeck.Event) error {
-	instance, err := a.GetATEMByContext(event.Context)
-	if err != nil {
-		return err
+	var payload streamdeck.KeyDownPayload[ProgramPropertyInspector]
+	if err := json.Unmarshal(event.Payload, &payload); err != nil {
+		return xerrors.Errorf("failed to unmarshal payload: %w", err)
 	}
 
-	s, err := a.buttons.Load(event.Context)
-	if err != nil {
-		return err
+	instance, ok := a.atems.Load(event.Context)
+	if !ok {
+		return xerrors.New("ATEM not found")
 	}
 
-	instance.client.SetProgramInput(atem.VideoInputType(s.input), uint8(s.input))
+	instance.client.SetProgramInput(atem.VideoInputType(payload.Settings.Input), uint8(payload.Settings.Input))
+	return nil
+}
+
+// PGMWillAppearHandler Set ATEM PGM
+func (a *App) PGMWillAppearHandler(ctx context.Context, client *streamdeck.Client, event streamdeck.Event) error {
+	var payload streamdeck.WillAppearPayload[ProgramPropertyInspector]
+	if err := json.Unmarshal(event.Payload, &payload); err != nil {
+		return xerrors.Errorf("failed to unmarshal payload: %w", err)
+	}
+
+	if _, ok := a.atems.Load(event.Context); !ok {
+		// initialize new instance
+		if err := a.addATEMHost(ctx, event.Context, &ATEMInstance{
+			client: atem.Create(payload.Settings.client.Ip, true),
+		}, true); err != nil {
+			return xerrors.Errorf("failed to add ATEM host: %w", err)
+		}
+	}
+
 	return nil
 }
 
 // Run Initialize and run the application
 func Run(ctx context.Context) error {
-	// Load settings from environment variables
-	cfg := Config{
-		Params: os.Args,
-		ATEMHosts: []ATEMHost{
-			{
-				IP:            os.Getenv("ATEM_IP"),
-				Name:          os.Getenv("ATEM_NAME"),
-				AutoReconnect: true,
-			},
-		},
-		Debug: os.Getenv("DEBUG") == "true",
-	}
-
 	// Initialize the application
-	app, err := NewApp(ctx, cfg)
+	app, err := NewApp(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to initialize app: %w", err)
 	}
 
-	// Connect to all ATEM hosts
-	if err := app.ConnectATEM(); err != nil {
-		return fmt.Errorf("failed to connect to ATEM: %w", err)
-	}
-
 	// Run the application
-	return app.Run()
+	return app.Run(ctx)
 }

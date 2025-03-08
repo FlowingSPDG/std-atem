@@ -1,15 +1,20 @@
 package stdatem
 
-// ATEMHost represents a single ATEM switcher configuration
-type ATEMHost struct {
-	IP            string // ATEM IP address
-	Name          string // Friendly name for the ATEM
-	AutoReconnect bool   // Whether to automatically reconnect
+import "github.com/FlowingSPDG/go-atem"
+
+// ATEMInstance represents a single ATEM connection
+type ATEMInstance struct {
+	client      *atem.Atem
+	state       state
+	reconnectCh chan struct{}
 }
 
-// Config Config for setup
-type Config struct {
-	Params    []string   // Set os.Args
-	ATEMHosts []ATEMHost // List of ATEM hosts
-	Debug     bool       // debug
+type PreviewPropertyInspector struct {
+	ATEMInstance
+	Input uint16
+}
+
+type ProgramPropertyInspector struct {
+	ATEMInstance
+	Input uint16
 }

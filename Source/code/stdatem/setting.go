@@ -1,30 +1,22 @@
 package stdatem
 
 import (
-	"fmt"
-	"sync"
+	"github.com/puzpuzpuz/xsync"
 )
 
-// SD button setting
-type buttonSetting struct {
-	input    uint16
-	meIndex  uint8
-	atemName string // Name of the ATEM instance this button controls
+type atems struct {
+	m *xsync.MapOf[string, *ATEMInstance]
 }
 
-type buttons struct {
-	m *sync.Map
-}
-
-func (b *buttons) Load(context string) (*buttonSetting, error) {
-	v, ok := b.m.Load(context)
+func (a *atems) Load(context string) (*ATEMInstance, bool) {
+	v, ok := a.m.Load(context)
 	if !ok {
-		return nil, fmt.Errorf("Setting not found for this context")
+		return nil, false
 	}
 
-	return (v).(*buttonSetting), nil
+	return v, true
 }
 
-func (b *buttons) Store(context string, setting *buttonSetting) {
-	b.m.Store(context, setting)
+func (a *atems) Store(context string, setting *ATEMInstance) {
+	a.m.Store(context, setting)
 }
