@@ -9,7 +9,6 @@ import (
 
 	"github.com/FlowingSPDG/go-atem"
 	"github.com/FlowingSPDG/streamdeck"
-	"github.com/puzpuzpuz/xsync"
 	"golang.org/x/xerrors"
 )
 
@@ -22,9 +21,7 @@ type App struct {
 // NewApp Initiate App main engine
 func NewApp(ctx context.Context) (*App, error) {
 	app := &App{
-		atems: &atems{
-			m: xsync.NewMapOf[*ATEMInstance](),
-		},
+		atems: newAtems(),
 	}
 
 	// Setup SD
@@ -48,10 +45,10 @@ func (a *App) addATEMHost(ctx context.Context, sdcontext string, host *ATEMInsta
 		reconnectCh: make(chan struct{}, 1),
 	}
 
-	a.atems.Store(sdcontext, instance)
+	a.atems.Store(host.client.Ip, sdcontext, instance)
 
 	instance.client.On("connected", func() {
-		if instance, ok := a.atems.Load(host.client.Ip); ok {
+		if instance, ok := a.atems.SolveATEMByIP(host.client.Ip); ok {
 			instance.state = state{
 				Preview:   instance.client.PreviewInput.Index,
 				Program:   instance.client.ProgramInput.Index,
@@ -61,7 +58,7 @@ func (a *App) addATEMHost(ctx context.Context, sdcontext string, host *ATEMInsta
 	})
 
 	instance.client.On("closed", func() {
-		if instance, ok := a.atems.Load(host.client.Ip); ok {
+		if instance, ok := a.atems.SolveATEMByIP(host.client.Ip); ok {
 			instance.state.Connected = instance.client.Connected()
 
 			// Trigger reconnection
@@ -90,15 +87,17 @@ func (a *App) setupSD() {
 	prv := a.sd.Action(setPreviewAction)
 	prv.RegisterHandler(streamdeck.KeyDown, a.PRVKeyDownHandler)
 	prv.RegisterHandler(streamdeck.WillAppear, a.PRVWillAppearHandler)
+	prv.RegisterHandler(streamdeck.WillDisappear, nil)
 
 	pgm := a.sd.Action(setProgramAction)
 	pgm.RegisterHandler(streamdeck.KeyDown, a.PGMKeyDownHandler)
 	pgm.RegisterHandler(streamdeck.WillAppear, a.PGMWillAppearHandler)
+	pgm.RegisterHandler(streamdeck.WillDisappear, nil)
 }
 
 // reconnectionLoop handles automatic reconnection for a specific ATEM host
 func (a *App) reconnectionLoop(ctx context.Context, ip string) {
-	instance, ok := a.atems.Load(ip)
+	instance, ok := a.atems.SolveATEMByIP(ip)
 	if !ok {
 		return
 	}
@@ -128,10 +127,10 @@ func (a *App) PRVKeyDownHandler(ctx context.Context, client *streamdeck.Client, 
 		return xerrors.Errorf("failed to unmarshal payload: %w", err)
 	}
 
-	msg := fmt.Sprintf("KeyDown on PRV %v", payload)
+	msg := fmt.Sprintf("KeyDown on PRV %v", payload.Settings)
 	a.sd.LogMessage(ctx, msg)
 
-	instance, ok := a.atems.Load(event.Context)
+	instance, ok := a.atems.SolveATEMByContext(event.Context)
 	if !ok {
 		return xerrors.New("ATEM not found")
 	}
@@ -147,10 +146,10 @@ func (a *App) PRVWillAppearHandler(ctx context.Context, client *streamdeck.Clien
 		return xerrors.Errorf("failed to unmarshal payload: %w", err)
 	}
 
-	msg := fmt.Sprintf("WillAppear on PRV %v", payload)
+	msg := fmt.Sprintf("WillAppear on PRV %v", payload.Settings)
 	a.sd.LogMessage(ctx, msg)
 
-	if _, ok := a.atems.Load(event.Context); !ok {
+	if _, ok := a.atems.SolveATEMByContext(event.Context); !ok {
 		// initialize new instance
 		if err := a.addATEMHost(ctx, event.Context, &ATEMInstance{
 			client: atem.Create(payload.Settings.IP, true),
@@ -169,10 +168,10 @@ func (a *App) PGMKeyDownHandler(ctx context.Context, client *streamdeck.Client, 
 		return xerrors.Errorf("failed to unmarshal payload: %w", err)
 	}
 
-	msg := fmt.Sprintf("KeyDown on PGM %v", payload)
+	msg := fmt.Sprintf("KeyDown on PGM %v", payload.Settings)
 	a.sd.LogMessage(ctx, msg)
 
-	instance, ok := a.atems.Load(event.Context)
+	instance, ok := a.atems.SolveATEMByContext(event.Context)
 	if !ok {
 		return xerrors.New("ATEM not found")
 	}
@@ -188,10 +187,10 @@ func (a *App) PGMWillAppearHandler(ctx context.Context, client *streamdeck.Clien
 		return xerrors.Errorf("failed to unmarshal payload: %w", err)
 	}
 
-	msg := fmt.Sprintf("WillAppear on PGM %v", payload)
+	msg := fmt.Sprintf("WillAppear on PGM %v", payload.Settings)
 	a.sd.LogMessage(ctx, msg)
 
-	if _, ok := a.atems.Load(event.Context); !ok {
+	if _, ok := a.atems.SolveATEMByContext(event.Context); !ok {
 		// initialize new instance
 		if err := a.addATEMHost(ctx, event.Context, &ATEMInstance{
 			client: atem.Create(payload.Settings.IP, true),
