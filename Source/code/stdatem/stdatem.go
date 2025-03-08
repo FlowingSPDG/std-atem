@@ -40,6 +40,9 @@ func NewApp(ctx context.Context) (*App, error) {
 
 // addATEMHost adds a new ATEM host and sets up its connection
 func (a *App) addATEMHost(ctx context.Context, sdcontext string, host *ATEMInstance, debug bool) error {
+	msg := fmt.Sprintf("Adding ATEM host %s...", host.client.Ip)
+	a.sd.LogMessage(ctx, msg)
+
 	instance := &ATEMInstance{
 		client:      atem.Create(host.client.Ip, debug),
 		reconnectCh: make(chan struct{}, 1),
@@ -125,6 +128,9 @@ func (a *App) PRVKeyDownHandler(ctx context.Context, client *streamdeck.Client, 
 		return xerrors.Errorf("failed to unmarshal payload: %w", err)
 	}
 
+	msg := fmt.Sprintf("KeyDown on PRV %v", payload)
+	a.sd.LogMessage(ctx, msg)
+
 	instance, ok := a.atems.Load(event.Context)
 	if !ok {
 		return xerrors.New("ATEM not found")
@@ -140,6 +146,9 @@ func (a *App) PRVWillAppearHandler(ctx context.Context, client *streamdeck.Clien
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
 		return xerrors.Errorf("failed to unmarshal payload: %w", err)
 	}
+
+	msg := fmt.Sprintf("WillAppear on PRV %v", payload)
+	a.sd.LogMessage(ctx, msg)
 
 	if _, ok := a.atems.Load(event.Context); !ok {
 		// initialize new instance
@@ -160,6 +169,9 @@ func (a *App) PGMKeyDownHandler(ctx context.Context, client *streamdeck.Client, 
 		return xerrors.Errorf("failed to unmarshal payload: %w", err)
 	}
 
+	msg := fmt.Sprintf("KeyDown on PGM %v", payload)
+	a.sd.LogMessage(ctx, msg)
+
 	instance, ok := a.atems.Load(event.Context)
 	if !ok {
 		return xerrors.New("ATEM not found")
@@ -175,6 +187,9 @@ func (a *App) PGMWillAppearHandler(ctx context.Context, client *streamdeck.Clien
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
 		return xerrors.Errorf("failed to unmarshal payload: %w", err)
 	}
+
+	msg := fmt.Sprintf("WillAppear on PGM %v", payload)
+	a.sd.LogMessage(ctx, msg)
 
 	if _, ok := a.atems.Load(event.Context); !ok {
 		// initialize new instance
