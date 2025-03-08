@@ -1,6 +1,10 @@
 package stdatem
 
-import "github.com/FlowingSPDG/go-atem"
+import (
+	"encoding/json"
+
+	"github.com/FlowingSPDG/go-atem"
+)
 
 // ATEMInstance represents a single ATEM connection
 type ATEMInstance struct {
@@ -10,11 +14,13 @@ type ATEMInstance struct {
 }
 
 type PreviewPropertyInspector struct {
-	IP    string
-	Input uint16
+	IP      string      `json:"ip"`
+	Input   json.Number `json:"input"`
+	MeIndex json.Number `json:"meIndex"`
 }
 
 type ProgramPropertyInspector struct {
-	IP    string
-	Input uint16
+	IP      string      `json:"ip"`
+	Input   json.Number `json:"input"`
+	MeIndex json.Number `json:"meIndex"`
 }

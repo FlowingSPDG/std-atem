@@ -48,6 +48,7 @@ func (a *App) addATEMHost(ctx context.Context, sdcontext string, host *ATEMInsta
 	a.atems.Store(host.client.Ip, sdcontext, instance)
 
 	instance.client.On("connected", func() {
+		a.sd.LogMessage(ctx, fmt.Sprintf("Connected to ATEM %s", host.client.Ip))
 		if instance, ok := a.atems.SolveATEMByIP(host.client.Ip); ok {
 			instance.state = state{
 				Preview:   instance.client.PreviewInput.Index,
@@ -58,6 +59,7 @@ func (a *App) addATEMHost(ctx context.Context, sdcontext string, host *ATEMInsta
 	})
 
 	instance.client.On("closed", func() {
+		a.sd.LogMessage(ctx, fmt.Sprintf("Closed connection to ATEM %s", host.client.Ip))
 		if instance, ok := a.atems.SolveATEMByIP(host.client.Ip); ok {
 			instance.state.Connected = instance.client.Connected()
 
@@ -136,7 +138,17 @@ func (a *App) PRVKeyDownHandler(ctx context.Context, client *streamdeck.Client, 
 		return xerrors.New("ATEM not found")
 	}
 
-	instance.client.SetPreviewInput(atem.VideoInputType(payload.Settings.Input), uint8(payload.Settings.Input))
+	input, err := payload.Settings.Input.Int64()
+	if err != nil {
+		return xerrors.Errorf("failed to convert input to int64: %w", err)
+	}
+
+	meIndex, err := payload.Settings.MeIndex.Int64()
+	if err != nil {
+		return xerrors.Errorf("failed to convert meIndex to int64: %w", err)
+	}
+
+	instance.client.SetPreviewInput(atem.VideoInputType(input), uint8(meIndex))
 	return nil
 }
 
@@ -179,7 +191,12 @@ func (a *App) PGMKeyDownHandler(ctx context.Context, client *streamdeck.Client, 
 		return xerrors.New("ATEM not found")
 	}
 
-	instance.client.SetProgramInput(atem.VideoInputType(payload.Settings.Input), uint8(payload.Settings.Input))
+	input, err := payload.Settings.Input.Int64()
+	if err != nil {
+		return xerrors.Errorf("failed to convert input to int64: %w", err)
+	}
+
+	instance.client.SetProgramInput(atem.VideoInputType(input), uint8(input))
 	return nil
 }
 
