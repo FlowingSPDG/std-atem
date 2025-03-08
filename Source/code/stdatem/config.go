@@ -10,11 +10,11 @@ type ATEMInstance struct {
 }
 
 type PreviewPropertyInspector struct {
-	ATEMInstance
+	IP    string
 	Input uint16
 }
 
 type ProgramPropertyInspector struct {
-	ATEMInstance
+	IP    string
 	Input uint16
 }

@@ -84,11 +84,11 @@ func (a *App) Run(ctx context.Context) error {
 
 // setup StreamDeck Client
 func (a *App) setupSD() {
-	prv := a.sd.Action(SetPreviewAction)
+	prv := a.sd.Action(setPreviewAction)
 	prv.RegisterHandler(streamdeck.KeyDown, a.PRVKeyDownHandler)
 	prv.RegisterHandler(streamdeck.WillAppear, a.PRVWillAppearHandler)
 
-	pgm := a.sd.Action(SetProgramAction)
+	pgm := a.sd.Action(setProgramAction)
 	pgm.RegisterHandler(streamdeck.KeyDown, a.PGMKeyDownHandler)
 	pgm.RegisterHandler(streamdeck.WillAppear, a.PGMWillAppearHandler)
 }
@@ -144,7 +144,7 @@ func (a *App) PRVWillAppearHandler(ctx context.Context, client *streamdeck.Clien
 	if _, ok := a.atems.Load(event.Context); !ok {
 		// initialize new instance
 		if err := a.addATEMHost(ctx, event.Context, &ATEMInstance{
-			client: atem.Create(payload.Settings.client.Ip, true),
+			client: atem.Create(payload.Settings.IP, true),
 		}, true); err != nil {
 			return xerrors.Errorf("failed to add ATEM host: %w", err)
 		}
@@ -179,7 +179,7 @@ func (a *App) PGMWillAppearHandler(ctx context.Context, client *streamdeck.Clien
 	if _, ok := a.atems.Load(event.Context); !ok {
 		// initialize new instance
 		if err := a.addATEMHost(ctx, event.Context, &ATEMInstance{
-			client: atem.Create(payload.Settings.client.Ip, true),
+			client: atem.Create(payload.Settings.IP, true),
 		}, true); err != nil {
 			return xerrors.Errorf("failed to add ATEM host: %w", err)
 		}

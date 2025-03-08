@@ -8,6 +8,8 @@ SRCDIR = $(MAKEFILE_DIR)Source
 PIDIR = $(MAKEFILE_DIR)Source/pi
 RELEASEDIR = Release
 
+BINARY = atem_go
+
 # Replacing "RM" command for Windows PowerShell.
 RM = rm -rf
 ifeq ($(OS),Windows_NT)
@@ -46,9 +48,9 @@ prepare:
 	@$(RM) $(BUILDDIR)/*
 
 build: prepare
-	cd $(SRCDIR)/code && GOARCH=amd64 go build -o $(BUILDDIR)/vmix_go.exe .
-	cd $(PIDIR) && yarn build
-	$(CP) $(PIDIR)/build/ $(BUILDDIR)/inspector
+	cd $(SRCDIR)/code/cmd && GOOS=darwin GOARCH=amd64 go build -o $(BUILDDIR)/$(BINARY) .
+	cd $(SRCDIR)/code/cmd && GOOS=windows GOARCH=amd64 go build -o $(BUILDDIR)/$(BINARY).exe .
+	$(CP) $(PIDIR) $(BUILDDIR)/inspector
 	$(CP) $(SRCDIR)/manifest.json $(BUILDDIR)
 	$(CP) $(SRCDIR)/images $(BUILDDIR)
 
