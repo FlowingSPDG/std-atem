@@ -124,6 +124,7 @@ func (a *App) reconnectionLoop(ctx context.Context, ip string) {
 func (a *App) PRVKeyDownHandler(ctx context.Context, client *streamdeck.Client, event streamdeck.Event) error {
 	var payload streamdeck.KeyDownPayload[PreviewPropertyInspector]
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
+		a.sd.LogMessage(ctx, fmt.Sprintf("failed to unmarshal payload: %v", err))
 		return xerrors.Errorf("failed to unmarshal payload: %w", err)
 	}
 
@@ -143,6 +144,7 @@ func (a *App) PRVKeyDownHandler(ctx context.Context, client *streamdeck.Client, 
 func (a *App) PRVWillAppearHandler(ctx context.Context, client *streamdeck.Client, event streamdeck.Event) error {
 	var payload streamdeck.WillAppearPayload[PreviewPropertyInspector]
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
+		a.sd.LogMessage(ctx, fmt.Sprintf("failed to unmarshal payload: %v", err))
 		return xerrors.Errorf("failed to unmarshal payload: %w", err)
 	}
 
@@ -165,6 +167,7 @@ func (a *App) PRVWillAppearHandler(ctx context.Context, client *streamdeck.Clien
 func (a *App) PGMKeyDownHandler(ctx context.Context, client *streamdeck.Client, event streamdeck.Event) error {
 	var payload streamdeck.KeyDownPayload[ProgramPropertyInspector]
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
+		a.sd.LogMessage(ctx, fmt.Sprintf("failed to unmarshal payload: %v", err))
 		return xerrors.Errorf("failed to unmarshal payload: %w", err)
 	}
 
@@ -184,6 +187,7 @@ func (a *App) PGMKeyDownHandler(ctx context.Context, client *streamdeck.Client, 
 func (a *App) PGMWillAppearHandler(ctx context.Context, client *streamdeck.Client, event streamdeck.Event) error {
 	var payload streamdeck.WillAppearPayload[ProgramPropertyInspector]
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
+		a.sd.LogMessage(ctx, fmt.Sprintf("failed to unmarshal payload: %v", err))
 		return xerrors.Errorf("failed to unmarshal payload: %w", err)
 	}
 
