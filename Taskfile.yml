@@ -1,0 +1,60 @@
+version: '3'
+
+
+includes:
+  vars: 
+    taskfile: TaskfileVars.yml
+    flatten: true
+  build: 
+    taskfile: ./Taskfile_{{OS}}.yml
+    flatten: true
+
+tasks:
+  test:
+    dir: Source/code
+    cmds:
+      - go test -v ./...
+  vet:
+    dir: Source/code
+    cmds:
+      - go vet ./...
+  setup-server:
+    dir: Source/code
+    cmds: 
+      - go mod download
+  setup:
+    deps:
+      - setup-server
+
+  build-server-windows:
+    dir: Source/code
+    cmds: 
+      - go build -o ../../{{.AppName}}/atem_go.exe ./cmd/main.go
+    env:
+      GOOS: windows
+  build-server-darwin:
+    dir: Source/code
+    cmds: 
+      - go build -o ../../{{.AppName}}/atem_go ./cmd/main.go
+    env:
+      GOOS: darwin
+
+  build-server:
+    deps:
+      - build-server-windows
+      - build-server-darwin
+  build:
+    deps:
+      - clean
+      - build-server
+    cmds:
+      - cp -r Source/images {{.AppName}}
+      - cp -r Source/manifest.json {{.AppName}}
+      - cp -r Source/pi/* {{.AppName}}/inspector
+
+  clean:
+    cmds:
+      - rm -rf {{.AppName}}/*
+      - rm -rf {{.ReleaseDir}}/*
+      - mkdir -p {{.ReleaseDir}}
+      - mkdir -p {{.AppName}}/inspector

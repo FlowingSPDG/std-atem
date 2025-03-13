@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/FlowingSPDG/std-atem/Source/code/di"
 	"github.com/FlowingSPDG/std-atem/Source/code/stdatem"
 )
 
@@ -26,7 +27,15 @@ func main() {
 
 	ctx := context.Background()
 	log.Println("Starting...")
-	if err := stdatem.Run(ctx); err != nil {
+	sd, err := di.InitializeStreamDeckClient(ctx)
+	if err != nil {
+		log.Fatalf("%v\n", err)
+	}
+	logger, err := di.InitializeStreamDeckLogger(ctx, sd)
+	if err != nil {
+		log.Fatalf("%v\n", err)
+	}
+	if err := stdatem.Run(ctx, logger, sd); err != nil {
 		log.Fatalf("%v\n", err)
 	}
 }
