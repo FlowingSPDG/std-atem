@@ -17,3 +17,4 @@ require (
 )
 
 replace github.com/FlowingSPDG/streamdeck => ../../../streamdeck
+replace github.com/FlowingSPDG/go-atem => ../../../go-atem

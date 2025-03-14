@@ -9,7 +9,9 @@ import (
 
 	"github.com/FlowingSPDG/go-atem"
 	"github.com/FlowingSPDG/std-atem/Source/code/logger"
+	"github.com/FlowingSPDG/std-atem/Source/code/setting"
 	"github.com/FlowingSPDG/streamdeck"
+	sdcontext "github.com/FlowingSPDG/streamdeck/context"
 	"github.com/puzpuzpuz/xsync"
 	"golang.org/x/xerrors"
 )
@@ -19,6 +21,7 @@ type App struct {
 	atems         *atems             // コンテキスト（ボタン）ごとの設定
 	logger        logger.Logger      // ログ
 	sd            *streamdeck.Client // StreamDeckクライアント
+	store         setting.SettingStore[*previewPropertyInspector]
 	refCounts     *xsync.MapOf[string, int]
 	activeClients *xsync.MapOf[string, *ATEMInstance]
 }
@@ -29,6 +32,7 @@ func NewApp(ctx context.Context, logger logger.Logger, sd *streamdeck.Client) (*
 		atems:         newAtems(logger),
 		logger:        logger,
 		sd:            sd,
+		store:         setting.NewSettingStore[*previewPropertyInspector](),
 		refCounts:     xsync.NewMapOf[int](),
 		activeClients: xsync.NewMapOf[*ATEMInstance](),
 	}
@@ -45,37 +49,76 @@ func NewApp(ctx context.Context, logger logger.Logger, sd *streamdeck.Client) (*
 }
 
 // addATEMHost 新しいATEMホストを追加し、接続をセットアップする
-func (a *App) addATEMHost(ctx context.Context, sdcontext string, host *ATEMInstance, debug bool) error {
-	msg := fmt.Sprintf("ATEMホスト %s を追加中...", host.client.Ip)
+func (a *App) addATEMHost(ctx context.Context, contextID string, ip string, debug bool) error {
+	msg := fmt.Sprintf("ATEMホスト %s を追加中...", ip)
 	a.logger.Debug(ctx, msg)
 
+	if instance, ok := a.atems.atemByIP.Load(ip); ok {
+		a.logger.Debug(ctx, "ATEMホスト %s は既に存在します", ip)
+		contexts, ok := a.atems.SolveContextsByIP(ctx, ip)
+		if !ok {
+			a.logger.Error(ctx, "ATEMが見つかりません")
+			return xerrors.New("ATEMが見つかりません")
+		}
+		contexts = append(contexts, contextID)
+		a.atems.contextsByIP.Store(ip, contexts)
+		a.atems.Store(ctx, ip, contextID, instance)
+		return nil
+	}
+
 	instance := &ATEMInstance{
-		client:      atem.Create(host.client.Ip, debug),
+		client:      atem.Create(ip, debug),
 		reconnectCh: make(chan struct{}, 1),
 	}
 
-	a.atems.Store(ctx, host.client.Ip, sdcontext, instance)
+	a.atems.Store(ctx, ip, contextID, instance)
 
 	instance.client.On("connected", func() {
-		a.logger.Debug(ctx, fmt.Sprintf("ATEM %s に接続しました", host.client.Ip))
-		if instance, ok := a.atems.SolveATEMByIP(ctx, host.client.Ip); ok {
-			instance.state = state{
-				Preview:   instance.client.PreviewInput.Index,
-				Program:   instance.client.ProgramInput.Index,
-				Connected: instance.client.Connected(),
+		a.logger.Debug(ctx, fmt.Sprintf("ATEM %s に接続しました", ip))
+	})
+
+	instance.client.On("PrvI.change", func() {
+		a.logger.Debug(ctx, "PrvI.change")
+
+		// 紐づいたContextを取得
+		contexts, ok := a.atems.SolveContextsByIP(ctx, ip)
+		if !ok {
+			a.logger.Error(ctx, "ATEMが見つかりません")
+			return
+		}
+		a.logger.Debug(ctx, "PrvI.change contexts:%v", contexts)
+
+		for _, context := range contexts {
+			setting, ok := a.store.Load(context)
+			if !ok {
+				a.logger.Error(ctx, "ATEMが見つかりません")
+				return
 			}
+
+			// TODO: M/Eが違う場合は無視する
+			a.logger.Debug(ctx, "PrvI.change input:%d meIndex:%d PreviewInput:%v", setting.Input, setting.MeIndex, instance.client.PreviewInput)
+			isActive := uint8(setting.Input) == uint8(instance.client.PreviewInput.Index)
+			a.logger.Debug(ctx, "PrvI.change setting:%v actual:%d isActive:%t", setting, instance.client.PreviewInput.Index, isActive)
+
+			// タリーを反映
+			sdctx := sdcontext.WithContext(ctx, context)
+			if isActive {
+				a.sd.SetImage(sdctx, tallyPreview, streamdeck.HardwareAndSoftware)
+			} else {
+				a.sd.SetImage(sdctx, tallyInactive, streamdeck.HardwareAndSoftware)
+			}
+
 		}
 	})
 
 	instance.client.On("closed", func() {
-		a.logger.Debug(ctx, fmt.Sprintf("ATEM %s への接続を閉じました", host.client.Ip))
-		if instance, ok := a.atems.SolveATEMByIP(ctx, host.client.Ip); ok {
-			instance.state.Connected = instance.client.Connected()
+		a.logger.Debug(ctx, fmt.Sprintf("ATEM %s への接続を閉じました", ip))
+		if instance, ok := a.atems.SolveATEMByIP(ctx, ip); ok {
 
 			// 再接続をトリガー
 			select {
 			case instance.reconnectCh <- struct{}{}:
-				a.logger.Debug(ctx, "reconnectionLoop ip:%s 再接続をトリガーしました", host.client.Ip)
+				a.logger.Debug(ctx, "reconnectionLoop ip:%s 再接続をトリガーしました", ip)
 			case <-ctx.Done():
 				return
 			default:
@@ -84,8 +127,8 @@ func (a *App) addATEMHost(ctx context.Context, sdcontext string, host *ATEMInsta
 	})
 
 	// 再接続ゴルーチンを開始
-	go a.reconnectionLoop(ctx, host.client.Ip)
-	a.logger.Debug(ctx, "addATEMHost ip:%s 再接続ゴルーチンを開始", host.client.Ip)
+	go a.reconnectionLoop(ctx, ip)
+	a.logger.Debug(ctx, "addATEMHost ip:%s 再接続ゴルーチンを開始", ip)
 	instance.reconnectCh <- struct{}{}
 
 	return nil
@@ -102,6 +145,7 @@ func (a *App) setupSD() {
 	prv.RegisterHandler(streamdeck.KeyDown, a.PRVKeyDownHandler)
 	prv.RegisterHandler(streamdeck.WillAppear, a.PRVWillAppearHandler)
 	prv.RegisterHandler(streamdeck.WillDisappear, a.PRVWillDisappearHandler)
+	prv.RegisterHandler(streamdeck.DidReceiveSettings, a.PRVDidReceiveSettingsHandler)
 
 	pgm := a.sd.Action(setProgramAction)
 	pgm.RegisterHandler(streamdeck.KeyDown, a.PGMKeyDownHandler)
@@ -245,7 +289,13 @@ func (a *App) PRVKeyDownHandler(ctx context.Context, client *streamdeck.Client, 
 		return xerrors.Errorf("payloadのアンマーシャルに失敗: %w", err)
 	}
 
-	msg := fmt.Sprintf("PRV %v でKeyDown", payload.Settings)
+	parsed, err := payload.Settings.Parse()
+	if err != nil {
+		a.logger.Error(ctx, fmt.Sprintf("payloadのパースに失敗: %v", err))
+		return xerrors.Errorf("payloadのパースに失敗: %w", err)
+	}
+
+	msg := fmt.Sprintf("PRV %v でKeyDown", parsed)
 	a.logger.Debug(ctx, msg)
 
 	instance, ok := a.atems.SolveATEMByContext(ctx, event.Context)
@@ -254,46 +304,34 @@ func (a *App) PRVKeyDownHandler(ctx context.Context, client *streamdeck.Client, 
 		return xerrors.New("ATEMが見つかりません")
 	}
 
-	input, err := payload.Settings.Input.Int64()
-	if err != nil {
-		a.logger.Error(ctx, fmt.Sprintf("inputをint64に変換できません: %v", err))
-		return xerrors.Errorf("inputをint64に変換できません: %w", err)
-	}
+	a.logger.Debug(ctx, "PRVKeyDownHandler input:%d meIndex:%d", parsed.Input, parsed.MeIndex)
 
-	meIndex, err := payload.Settings.MeIndex.Int64()
-	if err != nil {
-		a.logger.Error(ctx, fmt.Sprintf("meIndexをint64に変換できません: %v", err))
-		return xerrors.Errorf("meIndexをint64に変換できません: %w", err)
-	}
-	meIndex-- // 0-indexedに変換
-
-	a.logger.Debug(ctx, "PRVKeyDownHandler client info: %v", instance.client)
-
-	a.logger.Debug(ctx, "PRVKeyDownHandler input:%d meIndex:%d", input, meIndex)
-
-	instance.client.SetPreviewInput(solveATEMVideoInput(input), uint8(meIndex))
+	instance.client.SetPreviewInput(parsed.Input, parsed.MeIndex)
 	a.logger.Debug(ctx, "PRVKeyDownHandler 完了")
 	return nil
 }
 
 // PRVWillAppearHandler ATEM PRVを設定
 func (a *App) PRVWillAppearHandler(ctx context.Context, client *streamdeck.Client, event streamdeck.Event) error {
-	var payload streamdeck.WillAppearPayload[PreviewPropertyInspector]
+	var payload streamdeck.WillAppearPayload[*PreviewPropertyInspector]
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
 		a.logger.Error(ctx, fmt.Sprintf("payloadのアンマーシャルに失敗: %v", err))
 		return xerrors.Errorf("payloadのアンマーシャルに失敗: %w", err)
 	}
+	parsed, err := payload.Settings.Parse()
+	if err != nil {
+		a.logger.Error(ctx, fmt.Sprintf("payloadのパースに失敗: %v", err))
+		return xerrors.Errorf("payloadのパースに失敗: %w", err)
+	}
 
-	msg := fmt.Sprintf("PRV %v でWillAppear", payload.Settings)
+	msg := fmt.Sprintf("PRV %#v でWillAppear", parsed)
 	a.logger.Debug(ctx, msg)
 
-	if _, ok := a.atems.SolveATEMByContext(ctx, event.Context); !ok {
-		// 新しいインスタンスを初期化
-		if err := a.addATEMHost(ctx, event.Context, &ATEMInstance{
-			client: atem.Create(payload.Settings.IP, true),
-		}, true); err != nil {
-			return xerrors.Errorf("ATEMホストの追加に失敗: %w", err)
-		}
+	a.store.Store(event.Context, parsed)
+
+	// 新しいインスタンスを初期化
+	if err := a.addATEMHost(ctx, event.Context, parsed.IP, false); err != nil {
+		return xerrors.Errorf("ATEMホストの追加に失敗: %w", err)
 	}
 
 	return nil
@@ -335,13 +373,9 @@ func (a *App) PGMWillAppearHandler(ctx context.Context, client *streamdeck.Clien
 	msg := fmt.Sprintf("PGM %v でWillAppear", payload.Settings)
 	a.logger.Debug(ctx, msg)
 
-	if _, ok := a.atems.SolveATEMByContext(ctx, event.Context); !ok {
-		// 新しいインスタンスを初期化
-		if err := a.addATEMHost(ctx, event.Context, &ATEMInstance{
-			client: atem.Create(payload.Settings.IP, true),
-		}, true); err != nil {
-			return xerrors.Errorf("ATEMホストの追加に失敗: %w", err)
-		}
+	// 新しいインスタンスを初期化
+	if err := a.addATEMHost(ctx, event.Context, payload.Settings.IP, true); err != nil {
+		return xerrors.Errorf("ATEMホストの追加に失敗: %w", err)
 	}
 
 	return nil
@@ -366,6 +400,30 @@ func (a *App) PGMWillDisappearHandler(ctx context.Context, client *streamdeck.Cl
 		return xerrors.Errorf("payloadのアンマーシャルに失敗: %w", err)
 	}
 	a.handleDisappear(ctx, payload.Settings.IP)
+	return nil
+}
+
+// PRVDidReceiveSettingsHandler PRVの設定を受け取る
+func (a *App) PRVDidReceiveSettingsHandler(ctx context.Context, client *streamdeck.Client, event streamdeck.Event) error {
+	var payload streamdeck.DidReceiveSettingsPayload[PreviewPropertyInspector]
+	if err := json.Unmarshal(event.Payload, &payload); err != nil {
+		a.logger.Error(ctx, fmt.Sprintf("payloadのアンマーシャルに失敗: %v", err))
+		return xerrors.Errorf("payloadのアンマーシャルに失敗: %w", err)
+	}
+
+	parsed, err := payload.Settings.Parse()
+	if err != nil {
+		a.logger.Error(ctx, fmt.Sprintf("payloadのパースに失敗: %v", err))
+		return xerrors.Errorf("payloadのパースに失敗: %w", err)
+	}
+
+	// 新しいインスタンスを初期化
+	if err := a.addATEMHost(ctx, event.Context, parsed.IP, true); err != nil {
+		return xerrors.Errorf("ATEMホストの追加に失敗: %w", err)
+	}
+
+	a.store.Store(event.Context, parsed)
+
 	return nil
 }
 
