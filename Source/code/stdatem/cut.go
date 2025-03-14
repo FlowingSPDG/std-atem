@@ -50,7 +50,7 @@ func (a *App) CutKeyDownHandler(ctx context.Context, client *streamdeck.Client, 
 	msg := fmt.Sprintf("Cut %v でKeyDown", payload.Settings)
 	a.logger.Debug(ctx, msg)
 
-	instance, ok := a.atems.SolveATEMByContext(ctx, event.Context)
+	instance, ok := a.connectionManager.SolveATEMByContext(ctx, event.Context)
 	if !ok {
 		a.logger.Error(ctx, "CutKeyDownHandler ATEMが見つかりません")
 		return xerrors.New("CutKeyDownHandler ATEMが見つかりません")
@@ -58,7 +58,7 @@ func (a *App) CutKeyDownHandler(ctx context.Context, client *streamdeck.Client, 
 
 	a.logger.Debug(ctx, "CutKeyDownHandler")
 
-	instance.client.PerformCut()
+	instance.Client.PerformCut()
 	a.logger.Debug(ctx, "CutKeyDownHandler 完了")
 	return nil
 }

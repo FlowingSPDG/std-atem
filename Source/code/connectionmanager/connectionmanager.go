@@ -1,34 +1,41 @@
-package stdatem
+package connectionmanager
 
 import (
 	"context"
 
+	"github.com/FlowingSPDG/go-atem"
 	"github.com/FlowingSPDG/std-atem/Source/code/logger"
 	"github.com/puzpuzpuz/xsync"
 )
 
-type actionAndContext struct {
-	action  string
-	context string
+type ActionAndContext struct {
+	Action  string
+	Context string
 }
 
-type atems struct {
+// ATEMInstance represents a single ATEM connection
+type ATEMInstance struct {
+	Client      *atem.Atem
+	ReconnectCh chan struct{}
+}
+
+type ConnectionManager struct {
 	atemByIP      *xsync.MapOf[string, *ATEMInstance]      // host: instance
 	atemByContext *xsync.MapOf[string, *ATEMInstance]      // context: binding
-	contextsByIP  *xsync.MapOf[string, []actionAndContext] // host: contexts
+	contextsByIP  *xsync.MapOf[string, []ActionAndContext] // host: contexts
 	logger        logger.Logger
 }
 
-func newAtems(logger logger.Logger) *atems {
-	return &atems{
+func NewConnectionManager(logger logger.Logger) *ConnectionManager {
+	return &ConnectionManager{
 		atemByIP:      xsync.NewMapOf[*ATEMInstance](),
 		atemByContext: xsync.NewMapOf[*ATEMInstance](),
-		contextsByIP:  xsync.NewMapOf[[]actionAndContext](),
+		contextsByIP:  xsync.NewMapOf[[]ActionAndContext](),
 		logger:        logger,
 	}
 }
 
-func (a *atems) SolveATEMByIP(ctx context.Context, ip string) (*ATEMInstance, bool) {
+func (a *ConnectionManager) SolveATEMByIP(ctx context.Context, ip string) (*ATEMInstance, bool) {
 	a.logger.Debug(ctx, "SolveATEMByIP ip:%s", ip)
 	v, ok := a.atemByIP.Load(ip)
 	if !ok {
@@ -38,7 +45,7 @@ func (a *atems) SolveATEMByIP(ctx context.Context, ip string) (*ATEMInstance, bo
 
 	return v, true
 }
-func (a *atems) SolveATEMByContext(ctx context.Context, context string) (*ATEMInstance, bool) {
+func (a *ConnectionManager) SolveATEMByContext(ctx context.Context, context string) (*ATEMInstance, bool) {
 	a.logger.Debug(ctx, "SolveATEMByContext context:%s", context)
 	v, ok := a.atemByContext.Load(context)
 	if !ok {
@@ -49,13 +56,13 @@ func (a *atems) SolveATEMByContext(ctx context.Context, context string) (*ATEMIn
 	return v, true
 }
 
-func (a *atems) SolveContextsByIP(ctx context.Context, ip string) ([]actionAndContext, bool) {
+func (a *ConnectionManager) SolveContextsByIP(ctx context.Context, ip string) ([]ActionAndContext, bool) {
 	a.logger.Debug(ctx, "SolveContextsByIP ip:%s", ip)
 	// ipからStreamDeck contextを取得する
-	var contexts []actionAndContext
+	var contexts []ActionAndContext
 	var ok bool
 
-	a.contextsByIP.Range(func(key string, value []actionAndContext) bool {
+	a.contextsByIP.Range(func(key string, value []ActionAndContext) bool {
 		if key == ip {
 			contexts = append(contexts, value...)
 			ok = true
@@ -72,18 +79,18 @@ func (a *atems) SolveContextsByIP(ctx context.Context, ip string) ([]actionAndCo
 	return contexts, ok
 }
 
-func (a *atems) Store(ctx context.Context, action, ip, context string, setting *ATEMInstance) {
+func (a *ConnectionManager) Store(ctx context.Context, action, ip, context string, at *ATEMInstance) {
 	a.logger.Debug(ctx, "Store action:%s ip:%s context:%s", action, ip, context)
-	a.atemByIP.Store(ip, setting)
-	a.atemByContext.Store(context, setting)
+	a.atemByIP.Store(ip, at)
+	a.atemByContext.Store(context, at)
 	if contextIDs, ok := a.contextsByIP.Load(ip); !ok {
-		a.contextsByIP.Store(ip, []actionAndContext{{action: action, context: context}})
+		a.contextsByIP.Store(ip, []ActionAndContext{{Action: action, Context: context}})
 	} else {
-		a.contextsByIP.Store(ip, append(contextIDs, actionAndContext{action: action, context: context}))
+		a.contextsByIP.Store(ip, append(contextIDs, ActionAndContext{Action: action, Context: context}))
 	}
 }
 
-func (a *atems) DeleteATEMByIP(ctx context.Context, ip string) {
+func (a *ConnectionManager) DeleteATEMByIP(ctx context.Context, ip string) {
 	a.logger.Debug(ctx, "DeleteATEMByIP ip:%s", ip)
 	a.atemByIP.Delete(ip)
 
@@ -93,10 +100,10 @@ func (a *atems) DeleteATEMByIP(ctx context.Context, ip string) {
 	if !ok {
 		return
 	}
-	at.client.Close()
+	at.Client.Close()
 }
 
-func (a *atems) DeleteATEMByContext(ctx context.Context, context string) {
+func (a *ConnectionManager) DeleteATEMByContext(ctx context.Context, context string) {
 	a.logger.Debug(ctx, "DeleteATEMByContext context:%s", context)
 	a.atemByContext.Delete(context)
 
@@ -105,15 +112,15 @@ func (a *atems) DeleteATEMByContext(ctx context.Context, context string) {
 	if !ok {
 		return
 	}
-	contexts, ok := a.SolveContextsByIP(ctx, at.client.Ip)
+	contexts, ok := a.SolveContextsByIP(ctx, at.Client.Ip)
 	if ok {
 		if len(contexts) == 0 {
-			a.logger.Debug(ctx, "Delete closing ATEM client ip:%s", at.client.Ip)
-			at, ok := a.SolveATEMByIP(ctx, at.client.Ip)
+			a.logger.Debug(ctx, "Delete closing ATEM client ip:%s", at.Client.Ip)
+			at, ok := a.SolveATEMByIP(ctx, at.Client.Ip)
 			if !ok {
 				return
 			}
-			at.client.Close()
+			at.Client.Close()
 		}
 	}
 }

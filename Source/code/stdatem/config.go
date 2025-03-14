@@ -7,12 +7,6 @@ import (
 	"golang.org/x/xerrors"
 )
 
-// ATEMInstance represents a single ATEM connection
-type ATEMInstance struct {
-	client      *atem.Atem
-	reconnectCh chan struct{}
-}
-
 type PreviewPropertyInspector struct {
 	IP      string      `json:"ip"`
 	Input   json.Number `json:"input"`

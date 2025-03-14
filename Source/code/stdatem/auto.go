@@ -50,7 +50,7 @@ func (a *App) AutoKeyDownHandler(ctx context.Context, client *streamdeck.Client,
 	msg := fmt.Sprintf("Auto %v でKeyDown", payload.Settings)
 	a.logger.Debug(ctx, msg)
 
-	instance, ok := a.atems.SolveATEMByContext(ctx, event.Context)
+	instance, ok := a.connectionManager.SolveATEMByContext(ctx, event.Context)
 	if !ok {
 		a.logger.Error(ctx, "AutoKeyDownHandler ATEMが見つかりません")
 		return xerrors.New("AutoKeyDownHandler ATEMが見つかりません")
@@ -58,7 +58,7 @@ func (a *App) AutoKeyDownHandler(ctx context.Context, client *streamdeck.Client,
 
 	a.logger.Debug(ctx, "AutoKeyDownHandler")
 
-	instance.client.PerformAutoTransition()
+	instance.Client.PerformAutoTransition()
 	a.logger.Debug(ctx, "AutoKeyDownHandler 完了")
 	return nil
 }

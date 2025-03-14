@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/FlowingSPDG/go-atem"
+	"github.com/FlowingSPDG/std-atem/Source/code/connectionmanager"
 	"github.com/FlowingSPDG/std-atem/Source/code/logger"
 	"github.com/FlowingSPDG/std-atem/Source/code/setting"
 	"github.com/FlowingSPDG/streamdeck"
@@ -18,25 +19,25 @@ import (
 
 // App メインエンジン
 type App struct {
-	atems               *atems             // コンテキスト（ボタン）ごとの設定
-	logger              logger.Logger      // ログ
-	sd                  *streamdeck.Client // StreamDeckクライアント
+	connectionManager   *connectionmanager.ConnectionManager // コンテキスト（ボタン）ごとの設定
+	logger              logger.Logger                        // ログ
+	sd                  *streamdeck.Client                   // StreamDeckクライアント
 	previewSettingStore setting.SettingStore[*previewPropertyInspector]
 	programSettingStore setting.SettingStore[*programPropertyInspector]
 	refCounts           *xsync.MapOf[string, int]
-	activeClients       *xsync.MapOf[string, *ATEMInstance]
+	activeClients       *xsync.MapOf[string, *connectionmanager.ATEMInstance]
 }
 
 // NewApp Appメインエンジンを初期化する
 func NewApp(ctx context.Context, logger logger.Logger, sd *streamdeck.Client) (*App, error) {
 	app := &App{
-		atems:               newAtems(logger),
+		connectionManager:   connectionmanager.NewConnectionManager(logger),
 		logger:              logger,
 		sd:                  sd,
 		previewSettingStore: setting.NewSettingStore[*previewPropertyInspector](),
 		programSettingStore: setting.NewSettingStore[*programPropertyInspector](),
 		refCounts:           xsync.NewMapOf[int](),
-		activeClients:       xsync.NewMapOf[*ATEMInstance](),
+		activeClients:       xsync.NewMapOf[*connectionmanager.ATEMInstance](),
 	}
 
 	// SDのセットアップ
@@ -55,60 +56,59 @@ func (a *App) addATEMHost(ctx context.Context, action string, contextID string, 
 	msg := fmt.Sprintf("ATEMホスト %s を追加中...", ip)
 	a.logger.Debug(ctx, msg)
 
-	if instance, ok := a.atems.atemByIP.Load(ip); ok {
+	if instance, ok := a.connectionManager.SolveATEMByIP(ctx, ip); ok {
 		a.logger.Debug(ctx, "ATEMホスト %s は既に存在します", ip)
-		contexts, ok := a.atems.SolveContextsByIP(ctx, ip)
+		contexts, ok := a.connectionManager.SolveContextsByIP(ctx, ip)
 		if !ok {
 			a.logger.Error(ctx, "ATEMが見つかりません")
 			return xerrors.New("ATEMが見つかりません")
 		} else {
-			contexts = append(contexts, actionAndContext{action: action, context: contextID})
-			a.atems.contextsByIP.Store(ip, contexts)
-			a.atems.Store(ctx, action, ip, contextID, instance)
+			contexts = append(contexts, connectionmanager.ActionAndContext{Action: action, Context: contextID})
+			a.connectionManager.Store(ctx, action, ip, contextID, instance)
 			return nil
 		}
 	}
 
-	instance := &ATEMInstance{
-		client:      atem.Create(ip, debug),
-		reconnectCh: make(chan struct{}, 1),
+	instance := &connectionmanager.ATEMInstance{
+		Client:      atem.Create(ip, debug),
+		ReconnectCh: make(chan struct{}, 1),
 	}
 
-	a.atems.Store(ctx, action, ip, contextID, instance)
+	a.connectionManager.Store(ctx, action, ip, contextID, instance)
 
-	instance.client.On("connected", func() {
+	instance.Client.On("connected", func() {
 		a.logger.Debug(ctx, fmt.Sprintf("ATEM %s に接続しました", ip))
 	})
 
-	instance.client.On("PrvI.change", func() {
+	instance.Client.On("PrvI.change", func() {
 		a.logger.Debug(ctx, "PrvI.change")
 
 		// 紐づいたContextを取得
-		actions, ok := a.atems.SolveContextsByIP(ctx, ip)
+		actions, ok := a.connectionManager.SolveContextsByIP(ctx, ip)
 		if !ok {
 			a.logger.Error(ctx, "PrvI.change ATEMが見つかりません")
 			return
 		}
 		a.logger.Debug(ctx, "PrvI.change actions:%v", actions)
-		actions = lo.Filter(actions, func(action actionAndContext, _ int) bool {
-			return action.action == setPreviewAction
+		actions = lo.Filter(actions, func(action connectionmanager.ActionAndContext, _ int) bool {
+			return action.Action == setPreviewAction
 		})
 		a.logger.Debug(ctx, "PrvI.change contexts:%v", actions)
 
 		for _, action := range actions {
-			previewSetting, ok := a.previewSettingStore.Load(action.context)
+			previewSetting, ok := a.previewSettingStore.Load(action.Context)
 			if !ok {
 				a.logger.Error(ctx, "previewSettingが見つかりません")
 				return
 			}
 
 			// TODO: M/Eが違う場合は無視する
-			a.logger.Debug(ctx, "PrvI.change input:%d meIndex:%d PreviewInput:%v", previewSetting.Input, previewSetting.MeIndex, instance.client.PreviewInput)
-			isActive := uint8(previewSetting.Input) == uint8(instance.client.PreviewInput.Index)
-			a.logger.Debug(ctx, "PrvI.change setting:%v actual:%d isActive:%t", previewSetting, instance.client.PreviewInput.Index, isActive)
+			a.logger.Debug(ctx, "PrvI.change input:%d meIndex:%d PreviewInput:%v", previewSetting.Input, previewSetting.MeIndex, instance.Client.PreviewInput)
+			isActive := uint8(previewSetting.Input) == uint8(instance.Client.PreviewInput.Index)
+			a.logger.Debug(ctx, "PrvI.change setting:%v actual:%d isActive:%t", previewSetting, instance.Client.PreviewInput.Index, isActive)
 
 			// タリーを反映
-			sdctx := sdcontext.WithContext(ctx, action.context)
+			sdctx := sdcontext.WithContext(ctx, action.Context)
 			if isActive {
 				a.sd.SetImage(sdctx, tallyPreview, streamdeck.HardwareAndSoftware)
 			} else {
@@ -117,35 +117,35 @@ func (a *App) addATEMHost(ctx context.Context, action string, contextID string, 
 		}
 	})
 
-	instance.client.On("PrgI.change", func() {
+	instance.Client.On("PrgI.change", func() {
 		a.logger.Debug(ctx, "PrgI.change")
 
 		// 紐づいたContextを取得
-		actions, ok := a.atems.SolveContextsByIP(ctx, ip)
+		actions, ok := a.connectionManager.SolveContextsByIP(ctx, ip)
 		if !ok {
 			a.logger.Error(ctx, "PrgI.change ATEMが見つかりません")
 			return
 		}
 		a.logger.Debug(ctx, "PrgI.change actions:%v", actions)
-		actions = lo.Filter(actions, func(action actionAndContext, _ int) bool {
-			return action.action == setProgramAction
+		actions = lo.Filter(actions, func(action connectionmanager.ActionAndContext, _ int) bool {
+			return action.Action == setProgramAction
 		})
 		a.logger.Debug(ctx, "PrgI.change contexts:%v", actions)
 
 		for _, action := range actions {
-			programSetting, ok := a.programSettingStore.Load(action.context)
+			programSetting, ok := a.programSettingStore.Load(action.Context)
 			if !ok {
 				a.logger.Error(ctx, "PrgI.change programSettingが見つかりません")
 				return
 			}
 
 			// TODO: M/Eが違う場合は無視する
-			a.logger.Debug(ctx, "PrgI.change input:%d meIndex:%d PreviewInput:%v", programSetting.Input, programSetting.MeIndex, instance.client.ProgramInput.Index)
-			isActive := uint8(programSetting.Input) == uint8(instance.client.ProgramInput.Index)
-			a.logger.Debug(ctx, "PrgI.change setting:%v actual:%d isActive:%t", programSetting, instance.client.ProgramInput.Index, isActive)
+			a.logger.Debug(ctx, "PrgI.change input:%d meIndex:%d PreviewInput:%v", programSetting.Input, programSetting.MeIndex, instance.Client.ProgramInput.Index)
+			isActive := uint8(programSetting.Input) == uint8(instance.Client.ProgramInput.Index)
+			a.logger.Debug(ctx, "PrgI.change setting:%v actual:%d isActive:%t", programSetting, instance.Client.ProgramInput.Index, isActive)
 
 			// タリーを反映
-			sdctx := sdcontext.WithContext(ctx, action.context)
+			sdctx := sdcontext.WithContext(ctx, action.Context)
 			if isActive {
 				a.sd.SetImage(sdctx, tallyProgram, streamdeck.HardwareAndSoftware)
 			} else {
@@ -155,13 +155,13 @@ func (a *App) addATEMHost(ctx context.Context, action string, contextID string, 
 		}
 	})
 
-	instance.client.On("closed", func() {
+	instance.Client.On("closed", func() {
 		a.logger.Debug(ctx, fmt.Sprintf("ATEM %s への接続を閉じました", ip))
-		if instance, ok := a.atems.SolveATEMByIP(ctx, ip); ok {
+		if instance, ok := a.connectionManager.SolveATEMByIP(ctx, ip); ok {
 
 			// 再接続をトリガー
 			select {
-			case instance.reconnectCh <- struct{}{}:
+			case instance.ReconnectCh <- struct{}{}:
 				a.logger.Debug(ctx, "reconnectionLoop ip:%s 再接続をトリガーしました", ip)
 			case <-ctx.Done():
 				return
@@ -173,7 +173,7 @@ func (a *App) addATEMHost(ctx context.Context, action string, contextID string, 
 	// 再接続ゴルーチンを開始
 	go a.reconnectionLoop(ctx, ip)
 	a.logger.Debug(ctx, "addATEMHost ip:%s 再接続ゴルーチンを開始", ip)
-	instance.reconnectCh <- struct{}{}
+	instance.ReconnectCh <- struct{}{}
 
 	return nil
 }
@@ -214,7 +214,7 @@ func (a *App) setupSD() {
 // reconnectionLoop 特定のATEMホストの自動再接続を処理
 func (a *App) reconnectionLoop(ctx context.Context, ip string) {
 	a.logger.Debug(ctx, "reconnectionLoop ip:%s", ip)
-	instance, ok := a.atems.SolveATEMByIP(ctx, ip)
+	instance, ok := a.connectionManager.SolveATEMByIP(ctx, ip)
 	if !ok {
 		a.logger.Error(ctx, "ATEMが見つかりません")
 		return
@@ -225,14 +225,14 @@ func (a *App) reconnectionLoop(ctx context.Context, ip string) {
 		case <-ctx.Done():
 			a.logger.Debug(ctx, "reconnectionLoop ip:%s コンテキストが終了したため終了", ip)
 			return
-		case <-instance.reconnectCh:
+		case <-instance.ReconnectCh:
 			a.logger.Debug(ctx, "reconnectionLoop ip:%s 再接続をトリガーしました", ip)
-			if err := instance.client.Connect(); err != nil {
+			if err := instance.Client.Connect(); err != nil {
 				// 再試行前に待機
 				time.Sleep(5 * time.Second)
 				// 再試行
 				select {
-				case instance.reconnectCh <- struct{}{}:
+				case instance.ReconnectCh <- struct{}{}:
 				default:
 				}
 			}
@@ -341,7 +341,7 @@ func solveATEMVideoInput(input int64) atem.VideoInputType {
 
 func (a *App) handleDisappear(ctx context.Context, hostname string) {
 	a.logger.Debug(ctx, "handleDisappear hostname:%s", hostname)
-	a.atems.DeleteATEMByContext(ctx, hostname)
+	a.connectionManager.DeleteATEMByContext(ctx, hostname)
 }
 
 // Run アプリケーションを初期化して実行

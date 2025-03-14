@@ -63,7 +63,7 @@ func (a *App) PGMKeyDownHandler(ctx context.Context, client *streamdeck.Client, 
 	msg := fmt.Sprintf("PGM %v でKeyDown", parsed)
 	a.logger.Debug(ctx, msg)
 
-	instance, ok := a.atems.SolveATEMByContext(ctx, event.Context)
+	instance, ok := a.connectionManager.SolveATEMByContext(ctx, event.Context)
 	if !ok {
 		a.logger.Error(ctx, "PGMKeyDownHandler ATEMが見つかりません")
 		return xerrors.New("PGMKeyDownHandler ATEMが見つかりません")
@@ -71,7 +71,7 @@ func (a *App) PGMKeyDownHandler(ctx context.Context, client *streamdeck.Client, 
 
 	a.logger.Debug(ctx, "PGMKeyDownHandler input:%d meIndex:%d", parsed.Input, parsed.MeIndex)
 
-	instance.client.SetProgramInput(parsed.Input, parsed.MeIndex)
+	instance.Client.SetProgramInput(parsed.Input, parsed.MeIndex)
 	a.logger.Debug(ctx, "PGMKeyDownHandler 完了")
 	return nil
 }

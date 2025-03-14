@@ -63,7 +63,7 @@ func (a *App) PRVKeyDownHandler(ctx context.Context, client *streamdeck.Client, 
 	msg := fmt.Sprintf("PRV %v でKeyDown", parsed)
 	a.logger.Debug(ctx, msg)
 
-	instance, ok := a.atems.SolveATEMByContext(ctx, event.Context)
+	instance, ok := a.connectionManager.SolveATEMByContext(ctx, event.Context)
 	if !ok {
 		a.logger.Error(ctx, "PRVKeyDownHandler ATEMが見つかりません")
 		return xerrors.New("PRVKeyDownHandler ATEMが見つかりません")
@@ -71,7 +71,7 @@ func (a *App) PRVKeyDownHandler(ctx context.Context, client *streamdeck.Client, 
 
 	a.logger.Debug(ctx, "PRVKeyDownHandler input:%d meIndex:%d", parsed.Input, parsed.MeIndex)
 
-	instance.client.SetPreviewInput(parsed.Input, parsed.MeIndex)
+	instance.Client.SetPreviewInput(parsed.Input, parsed.MeIndex)
 	a.logger.Debug(ctx, "PRVKeyDownHandler 完了")
 	return nil
 }
