@@ -19,7 +19,7 @@ func InitializeStreamDeckClient(ctx context.Context) (*streamdeck.Client, error)
 	return sd, nil
 }
 
-func InitializeStreamDeckLogger(ctx context.Context, sd *streamdeck.Client) (logger.Logger, error) {
-	logger := logger.NewStreamDeckLogger(sd, logger.InfoLevel)
+func InitializeStreamDeckLogger(ctx context.Context, sd *streamdeck.Client, logLevel logger.LogLevel) (logger.Logger, error) {
+	logger := logger.NewStreamDeckLogger(sd, logLevel)
 	return logger, nil
 }

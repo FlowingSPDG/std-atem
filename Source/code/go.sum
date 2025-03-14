@@ -1,11 +1,9 @@
 github.com/FlowingSPDG/go-atem v0.0.0-20210521024700-964b2bac8248 h1:D7DLdYEgqZ//YUNNeLlzmjnmgbMkxlKcOs92747Q5tg=
 github.com/FlowingSPDG/go-atem v0.0.0-20210521024700-964b2bac8248/go.mod h1:SBz67s0x6eJTyQoQ20vBOu9OBlBeX7JmpOtX6oV3070=
-github.com/FlowingSPDG/streamdeck v0.0.0-20230506011737-7eb85f091e90 h1:ucYzwnTnPyTg44tuHsFdXnIDX5OFqCQmSEsFh6sa5dE=
-github.com/FlowingSPDG/streamdeck v0.0.0-20230506011737-7eb85f091e90/go.mod h1:xf0gNFmw7s/7NNewwYWEOzxDITtm2etmbVlZcYEN/vk=
 github.com/puzpuzpuz/xsync v1.5.2 h1:yRAP4wqSOZG+/4pxJ08fPTwrfL0IzE/LKQ/cw509qGY=
 github.com/puzpuzpuz/xsync v1.5.2/go.mod h1:K98BYhX3k1dQ2M63t1YNVDanbwUPmBCAhNmVrrxfiGg=
-golang.org/x/sync v0.12.0 h1:MHc5BpPuC30uJk597Ri8TV3CNZcTLu6B6z4lJy+g6Jw=
-golang.org/x/sync v0.12.0/go.mod h1:1dzgHSNfp02xaA81J2MS99Qcpr2w7fw1gpm99rleRqA=
+github.com/puzpuzpuz/xsync/v3 v3.4.0 h1:DuVBAdXuGFHv8adVXjWWZ63pJq+NRXOWVXlKDBZ+mJ4=
+github.com/puzpuzpuz/xsync/v3 v3.4.0/go.mod h1:VjzYrABPabuM4KyBh1Ftq6u8nhwY5tBPKP9jpmh0nnA=
 golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da h1:noIWHXmPHxILtqtCOPIhSt0ABwskkZKjD3bXGnZGpNY=
 golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da/go.mod h1:NDW/Ps6MPRej6fsCIbMTohpP40sJ/P/vI1MoTEGwX90=
 nhooyr.io/websocket v1.8.17 h1:KEVeLJkUywCKVsnLIDlD/5gtayKp8VoCkksHCGGfT9Y=
