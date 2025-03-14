@@ -3,10 +3,10 @@ package main
 import (
 	"context"
 	_ "embed"
-	"io"
 	"log"
-	"os"
 
+	"github.com/FlowingSPDG/std-atem/Source/code/di"
+	"github.com/FlowingSPDG/std-atem/Source/code/logger"
 	"github.com/FlowingSPDG/std-atem/Source/code/stdatem"
 )
 
@@ -16,17 +16,23 @@ const (
 )
 
 func main() {
-	logfile, err := os.OpenFile("./streamdeck-atem-plugin.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
-	if err != nil {
-		panic("cannnot open log:" + err.Error())
-	}
-	defer logfile.Close()
-	log.SetOutput(io.MultiWriter(logfile, os.Stdout))
-	log.SetFlags(log.Ldate | log.Ltime)
-
 	ctx := context.Background()
-	log.Println("Starting...")
-	if err := stdatem.Run(ctx); err != nil {
+	sd, err := di.InitializeStreamDeckClient(ctx)
+	if err != nil {
+		log.Fatalf("%v\n", err)
+	}
+
+	logLevel := logger.DebugLevel | logger.InfoLevel | logger.WarnLevel | logger.ErrorLevel
+	sdLogger, err := di.InitializeStreamDeckLogger(ctx, sd, logLevel)
+	if err != nil {
+		log.Fatalf("%v\n", err)
+	}
+
+	fileLogger := logger.NewFileLogger(ctx, logLevel)
+
+	multiLogger := logger.NewMultiLogger(logLevel, fileLogger, sdLogger)
+
+	if err := stdatem.Run(ctx, multiLogger, sd); err != nil {
 		log.Fatalf("%v\n", err)
 	}
 }

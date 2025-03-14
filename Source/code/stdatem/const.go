@@ -8,8 +8,14 @@ const (
 )
 const (
 	// SetPreviewAction SetPreviewAction Name
-	SetPreviewAction = "dev.flowingspdg.atem.setpreview"
+	setPreviewAction = "dev.flowingspdg.atem.preview"
 
 	// SetProgramAction SetProgramAction Name
-	SetProgramAction = "dev.flowingspdg.atem.setprogram"
+	setProgramAction = "dev.flowingspdg.atem.program"
+
+	// AutoAction SetAutoAction Name
+	autoAction = "dev.flowingspdg.atem.auto"
+
+	// cutAction
+	cutAction = "dev.flowingspdg.atem.cut"
 )

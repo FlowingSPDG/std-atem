@@ -1,6 +1,7 @@
 {
-  "Actions": [{
-      "Name": "vMix Function",
+  "Actions": [
+    {
+      "Name": "Preview",
       "States": [
         {
           "Image": "images/icon",
@@ -8,34 +9,80 @@
           "FontSize": "24"
         }
       ],
-      "PropertyInspectorPath": "inspector/vmix.html",
+      "PropertyInspectorPath": "inspector/pi_preview.html", 
       "SupportedInMultiActions": true,
-      "Tooltip": "send vMix function",
-      "UUID": "dev.flowingspdg.vmix.function",
+      "Tooltip": "Tooltip",
+      "UUID": "dev.flowingspdg.atem.preview",
+      "Icon": "images/icon" 
+    },
+    {
+      "Name": "Program",
+      "States": [
+        {
+          "Image": "images/icon",
+          "TitleAlignment": "middle",
+          "FontSize": "24"
+        }
+      ],
+      "PropertyInspectorPath": "inspector/pi_program.html", 
+      "SupportedInMultiActions": true,
+      "Tooltip": "Tooltip",
+      "UUID": "dev.flowingspdg.atem.program",
+      "Icon": "images/icon" 
+    },
+    {
+      "Name": "Auto",
+      "States": [
+        {
+          "Image": "images/icon",
+          "TitleAlignment": "middle",
+          "FontSize": "24"
+        }
+      ],
+      "PropertyInspectorPath": "inspector/pi_auto.html", 
+      "SupportedInMultiActions": true,
+      "Tooltip": "Tooltip",
+      "UUID": "dev.flowingspdg.atem.auto",
+      "Icon": "images/icon" 
+    },
+    {
+      "Name": "Cut",
+      "States": [
+        {
+          "Image": "images/icon",
+          "TitleAlignment": "middle",
+          "FontSize": "24"
+        }
+      ],
+      "PropertyInspectorPath": "inspector/pi_cut.html", 
+      "SupportedInMultiActions": true,
+      "Tooltip": "Tooltip",
+      "UUID": "dev.flowingspdg.atem.cut",
       "Icon": "images/icon" 
     }
   ],
   "SDKVersion": 2,
   "Author": "Shugo Kawamura", 
-  "CodePath": "vmix_go.exe", 
-  "PropertyInspectorPath": "inspector/index.html", 
-  "Description": "Un-official vMix Integration App", 
-  "Name": "vMix Unofficial", 
+  "CodePath": "atem_go.exe", 
+  "CodePathMac" :"atem_go", 
+  "Description": "BMD ATEM", 
+  "Name": "BMD ATEM [FlowingSPDG]", 
   "Icon": "images/icon", 
-  "URL": "https://flowing.tokyo", 
-  "Version": "0.4.3",
+  "URL": "https://github.com/FlowingSPDG/std-atem", 
+  "Version": "0.1.0",
   "OS": [
+    {
+      "Platform": "mac", 
+      "MinimumVersion" : "10.11"
+    },
     {
         "Platform": "windows", 
         "MinimumVersion" : "10"
     }
   ],
   "Software": {
-    "MinimumVersion" : "4.1"
+    "MinimumVersion" : "6.8"
   },
-  "ApplicationsToMonitor": {
-    "windows": [
-      "vMix64.exe"
-    ]
-  }
+  "Category": "BMD ATEM [FlowingSPDG]",
+  "CategoryIcon": "images/icon"
 }

@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>BMD ATEM / Program</title>
+  <link rel="stylesheet" href="sdpi.css">
+</head>
+
+<script src="sdtools.common.js"></script>
+
+<body>
+  <div class="sdpi-wrapper">
+
+    <div class="sdpi-item">
+      <div class="sdpi-item-label">ATEM IP</div>
+      <div class="sdpi-item-child">
+        <input id="ip" class="sdProperty" onInput="setSettings()"></input>
+        </select>
+      </div>
+    </div>
+
+    <div class="sdpi-item">
+      <div class="sdpi-item-label">INPUT</div>
+      <div class="sdpi-item-child">
+        <input type="number" id="input" class="sdProperty" onInput="setSettings()"></input>
+      </div>
+    </div>
+
+    <div class="sdpi-item">
+      <div class="sdpi-item-label">ME index</div>
+      <div class="sdpi-item-child">
+        <input type="number" id="meIndex" class="sdProperty" onInput="setSettings()"></input>
+      </div>
+    </div>
+    
+  </div>
+</body>
+</html>
