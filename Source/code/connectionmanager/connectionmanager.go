@@ -103,12 +103,12 @@ func (a *ConnectionManager) DeleteATEMByIP(ctx context.Context, ip string) {
 	at.Client.Close()
 }
 
-func (a *ConnectionManager) DeleteATEMByContext(ctx context.Context, context string) {
-	a.logger.Debug(ctx, "DeleteATEMByContext context:%s", context)
-	a.atemByContext.Delete(context)
+func (a *ConnectionManager) DeleteATEMByContext(ctx context.Context, contextID string) {
+	a.logger.Debug(ctx, "DeleteATEMByContext contextID:%s", contextID)
+	a.atemByContext.Delete(contextID)
 
 	// 該当のATEMInstanceを利用するcontextが無くなったら、ATEMInstanceを削除する
-	at, ok := a.SolveATEMByContext(ctx, context)
+	at, ok := a.SolveATEMByContext(ctx, contextID)
 	if !ok {
 		return
 	}

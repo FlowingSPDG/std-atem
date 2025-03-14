@@ -35,7 +35,7 @@ func (a *App) CutWillDisappearHandler(ctx context.Context, client *streamdeck.Cl
 		a.logger.Error(ctx, fmt.Sprintf("payloadのアンマーシャルに失敗: %v", err))
 		return xerrors.Errorf("payloadのアンマーシャルに失敗: %w", err)
 	}
-	a.handleDisappear(ctx, payload.Settings.IP)
+	a.handleDisappear(ctx, event.Context)
 	return nil
 }
 

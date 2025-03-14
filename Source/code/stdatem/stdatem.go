@@ -339,9 +339,9 @@ func solveATEMVideoInput(input int64) atem.VideoInputType {
 	}
 }
 
-func (a *App) handleDisappear(ctx context.Context, hostname string) {
-	a.logger.Debug(ctx, "handleDisappear hostname:%s", hostname)
-	a.connectionManager.DeleteATEMByContext(ctx, hostname)
+func (a *App) handleDisappear(ctx context.Context, contextID string) {
+	a.logger.Debug(ctx, "handleDisappear contextID:%s", contextID)
+	a.connectionManager.DeleteATEMByContext(ctx, contextID)
 }
 
 // Run アプリケーションを初期化して実行
