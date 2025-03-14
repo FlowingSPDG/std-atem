@@ -185,16 +185,30 @@ func (a *App) Run(ctx context.Context) error {
 
 // setupSD StreamDeckクライアントをセットアップ
 func (a *App) setupSD() {
-	prv := a.sd.Action(setPreviewAction)
-	prv.RegisterHandler(streamdeck.KeyDown, a.PRVKeyDownHandler)
-	prv.RegisterHandler(streamdeck.WillAppear, a.PRVWillAppearHandler)
-	prv.RegisterHandler(streamdeck.WillDisappear, a.PRVWillDisappearHandler)
-	prv.RegisterHandler(streamdeck.DidReceiveSettings, a.PRVDidReceiveSettingsHandler)
+	setPreviewAction := a.sd.Action(setPreviewAction)
+	setPreviewAction.RegisterHandler(streamdeck.KeyDown, a.PRVKeyDownHandler)
+	setPreviewAction.RegisterHandler(streamdeck.WillAppear, a.PRVWillAppearHandler)
+	setPreviewAction.RegisterHandler(streamdeck.WillDisappear, a.PRVWillDisappearHandler)
+	setPreviewAction.RegisterHandler(streamdeck.DidReceiveSettings, a.PRVDidReceiveSettingsHandler)
 
-	pgm := a.sd.Action(setProgramAction)
-	pgm.RegisterHandler(streamdeck.KeyDown, a.PGMKeyDownHandler)
-	pgm.RegisterHandler(streamdeck.WillAppear, a.PGMWillAppearHandler)
-	pgm.RegisterHandler(streamdeck.WillDisappear, a.PGMWillDisappearHandler)
+	setProgramAction := a.sd.Action(setProgramAction)
+	setProgramAction.RegisterHandler(streamdeck.KeyDown, a.PGMKeyDownHandler)
+	setProgramAction.RegisterHandler(streamdeck.WillAppear, a.PGMWillAppearHandler)
+	setProgramAction.RegisterHandler(streamdeck.WillDisappear, a.PGMWillDisappearHandler)
+	setProgramAction.RegisterHandler(streamdeck.DidReceiveSettings, a.PGMDidReceiveSettingsHandler)
+
+	cutAction := a.sd.Action(cutAction)
+	cutAction.RegisterHandler(streamdeck.KeyDown, a.CutKeyDownHandler)
+	cutAction.RegisterHandler(streamdeck.WillAppear, a.CutWillAppearHandler)
+	cutAction.RegisterHandler(streamdeck.WillDisappear, a.CutWillDisappearHandler)
+	cutAction.RegisterHandler(streamdeck.DidReceiveSettings, a.CutDidReceiveSettingsHandler)
+
+	autoAction := a.sd.Action(autoAction)
+	autoAction.RegisterHandler(streamdeck.KeyDown, a.AutoKeyDownHandler)
+	autoAction.RegisterHandler(streamdeck.WillAppear, a.AutoWillAppearHandler)
+	autoAction.RegisterHandler(streamdeck.WillDisappear, a.AutoWillDisappearHandler)
+	autoAction.RegisterHandler(streamdeck.DidReceiveSettings, a.AutoDidReceiveSettingsHandler)
+
 }
 
 // reconnectionLoop 特定のATEMホストの自動再接続を処理
@@ -325,24 +339,9 @@ func solveATEMVideoInput(input int64) atem.VideoInputType {
 	}
 }
 
-// handleDisappear 接続の参照カウントを管理
 func (a *App) handleDisappear(ctx context.Context, hostname string) {
 	a.logger.Debug(ctx, "handleDisappear hostname:%s", hostname)
-	if oldValue, ok := a.refCounts.Load(hostname); ok {
-		if oldValue <= 1 {
-			// 最後の参照が削除されたら切断
-			a.logger.Debug(ctx, "handleDisappear hostname:%s 最後の参照が削除されたら切断", hostname)
-			if instance, ok := a.activeClients.Load(hostname); ok {
-				instance.client.Close()
-				a.activeClients.Delete(hostname)
-			}
-			a.refCounts.Delete(hostname)
-			a.logger.Debug(ctx, "handleDisappear hostname:%s 切断", hostname)
-		} else {
-			a.refCounts.Store(hostname, oldValue-1)
-			a.logger.Debug(ctx, "handleDisappear hostname:%s 参照カウントを減らす", hostname)
-		}
-	}
+	a.atems.DeleteATEMByContext(ctx, hostname)
 }
 
 // Run アプリケーションを初期化して実行

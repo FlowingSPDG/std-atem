@@ -116,12 +116,4 @@ func (a *atems) DeleteATEMByContext(ctx context.Context, context string) {
 			at.client.Close()
 		}
 	}
-
-	// 削除処理
-	a.logger.Debug(ctx, "Delete closing ATEM client ip:%s", at.client.Ip)
-	at, ok = a.SolveATEMByIP(ctx, at.client.Ip)
-	if !ok {
-		return
-	}
-	at.client.Close()
 }

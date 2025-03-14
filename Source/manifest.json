@@ -9,7 +9,7 @@
           "FontSize": "24"
         }
       ],
-      "PropertyInspectorPath": "inspector/pi.html", 
+      "PropertyInspectorPath": "inspector/pi_preview.html", 
       "SupportedInMultiActions": true,
       "Tooltip": "Tooltip",
       "UUID": "dev.flowingspdg.atem.preview",
@@ -24,10 +24,40 @@
           "FontSize": "24"
         }
       ],
-      "PropertyInspectorPath": "inspector/pi.html", 
+      "PropertyInspectorPath": "inspector/pi_program.html", 
       "SupportedInMultiActions": true,
       "Tooltip": "Tooltip",
       "UUID": "dev.flowingspdg.atem.program",
+      "Icon": "images/icon" 
+    },
+    {
+      "Name": "Auto",
+      "States": [
+        {
+          "Image": "images/icon",
+          "TitleAlignment": "middle",
+          "FontSize": "24"
+        }
+      ],
+      "PropertyInspectorPath": "inspector/pi_auto.html", 
+      "SupportedInMultiActions": true,
+      "Tooltip": "Tooltip",
+      "UUID": "dev.flowingspdg.atem.auto",
+      "Icon": "images/icon" 
+    },
+    {
+      "Name": "Cut",
+      "States": [
+        {
+          "Image": "images/icon",
+          "TitleAlignment": "middle",
+          "FontSize": "24"
+        }
+      ],
+      "PropertyInspectorPath": "inspector/pi_cut.html", 
+      "SupportedInMultiActions": true,
+      "Tooltip": "Tooltip",
+      "UUID": "dev.flowingspdg.atem.cut",
       "Icon": "images/icon" 
     }
   ],

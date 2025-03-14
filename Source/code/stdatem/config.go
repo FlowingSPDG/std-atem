@@ -72,3 +72,7 @@ func (p *ProgramPropertyInspector) Parse() (*programPropertyInspector, error) {
 		MeIndex: uint8(meIndex),
 	}, nil
 }
+
+type AutoPropertyInspector struct {
+	IP string `json:"ip"`
+}

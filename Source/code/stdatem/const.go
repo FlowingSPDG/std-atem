@@ -12,4 +12,10 @@ const (
 
 	// SetProgramAction SetProgramAction Name
 	setProgramAction = "dev.flowingspdg.atem.program"
+
+	// AutoAction SetAutoAction Name
+	autoAction = "dev.flowingspdg.atem.auto"
+
+	// cutAction
+	cutAction = "dev.flowingspdg.atem.cut"
 )
