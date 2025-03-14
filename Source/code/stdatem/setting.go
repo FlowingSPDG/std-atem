@@ -7,18 +7,23 @@ import (
 	"github.com/puzpuzpuz/xsync"
 )
 
+type actionAndContext struct {
+	action  string
+	context string
+}
+
 type atems struct {
-	atemByIP      *xsync.MapOf[string, *ATEMInstance] // host: instance
-	atembyContext *xsync.MapOf[string, *ATEMInstance] // context: binding
-	contextsByIP  *xsync.MapOf[string, []string]      // host: contexts
+	atemByIP      *xsync.MapOf[string, *ATEMInstance]      // host: instance
+	atemByContext *xsync.MapOf[string, *ATEMInstance]      // context: binding
+	contextsByIP  *xsync.MapOf[string, []actionAndContext] // host: contexts
 	logger        logger.Logger
 }
 
 func newAtems(logger logger.Logger) *atems {
 	return &atems{
 		atemByIP:      xsync.NewMapOf[*ATEMInstance](),
-		atembyContext: xsync.NewMapOf[*ATEMInstance](),
-		contextsByIP:  xsync.NewMapOf[[]string](),
+		atemByContext: xsync.NewMapOf[*ATEMInstance](),
+		contextsByIP:  xsync.NewMapOf[[]actionAndContext](),
 		logger:        logger,
 	}
 }
@@ -35,7 +40,7 @@ func (a *atems) SolveATEMByIP(ctx context.Context, ip string) (*ATEMInstance, bo
 }
 func (a *atems) SolveATEMByContext(ctx context.Context, context string) (*ATEMInstance, bool) {
 	a.logger.Debug(ctx, "SolveATEMByContext context:%s", context)
-	v, ok := a.atembyContext.Load(context)
+	v, ok := a.atemByContext.Load(context)
 	if !ok {
 		a.logger.Error(ctx, "SolveATEMByContext context:%s not found", context)
 		return nil, false
@@ -44,15 +49,15 @@ func (a *atems) SolveATEMByContext(ctx context.Context, context string) (*ATEMIn
 	return v, true
 }
 
-func (a *atems) SolveContextsByIP(ctx context.Context, ip string) ([]string, bool) {
+func (a *atems) SolveContextsByIP(ctx context.Context, ip string) ([]actionAndContext, bool) {
 	a.logger.Debug(ctx, "SolveContextsByIP ip:%s", ip)
 	// ipからStreamDeck contextを取得する
-	var contexts []string
+	var contexts []actionAndContext
 	var ok bool
 
-	a.contextsByIP.Range(func(key string, value []string) bool {
+	a.contextsByIP.Range(func(key string, value []actionAndContext) bool {
 		if key == ip {
-			contexts = value
+			contexts = append(contexts, value...)
 			ok = true
 			return false
 		}
@@ -67,14 +72,14 @@ func (a *atems) SolveContextsByIP(ctx context.Context, ip string) ([]string, boo
 	return contexts, ok
 }
 
-func (a *atems) Store(ctx context.Context, ip, context string, setting *ATEMInstance) {
-	a.logger.Debug(ctx, "Store ip:%s context:%s", ip, context)
+func (a *atems) Store(ctx context.Context, action, ip, context string, setting *ATEMInstance) {
+	a.logger.Debug(ctx, "Store action:%s ip:%s context:%s", action, ip, context)
 	a.atemByIP.Store(ip, setting)
-	a.atembyContext.Store(context, setting)
+	a.atemByContext.Store(context, setting)
 	if contextIDs, ok := a.contextsByIP.Load(ip); !ok {
-		a.contextsByIP.Store(ip, []string{context})
+		a.contextsByIP.Store(ip, []actionAndContext{{action: action, context: context}})
 	} else {
-		a.contextsByIP.Store(ip, append(contextIDs, context))
+		a.contextsByIP.Store(ip, append(contextIDs, actionAndContext{action: action, context: context}))
 	}
 }
 
@@ -93,7 +98,7 @@ func (a *atems) DeleteATEMByIP(ctx context.Context, ip string) {
 
 func (a *atems) DeleteATEMByContext(ctx context.Context, context string) {
 	a.logger.Debug(ctx, "DeleteATEMByContext context:%s", context)
-	a.atembyContext.Delete(context)
+	a.atemByContext.Delete(context)
 
 	// 該当のATEMInstanceを利用するcontextが無くなったら、ATEMInstanceを削除する
 	at, ok := a.SolveATEMByContext(ctx, context)

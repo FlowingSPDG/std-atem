@@ -13,8 +13,11 @@ require (
 
 require (
 	github.com/puzpuzpuz/xsync/v3 v3.4.0 // indirect
+	github.com/samber/lo v1.49.1 // indirect
+	golang.org/x/text v0.21.0 // indirect
 	nhooyr.io/websocket v1.8.17 // indirect
 )
 
 replace github.com/FlowingSPDG/streamdeck => ../../../streamdeck
+
 replace github.com/FlowingSPDG/go-atem => ../../../go-atem

@@ -51,8 +51,8 @@ type ProgramPropertyInspector struct {
 
 type programPropertyInspector struct {
 	IP      string
-	Input   uint16
-	MeIndex uint16
+	Input   atem.VideoInputType
+	MeIndex uint8
 }
 
 func (p *ProgramPropertyInspector) Parse() (*programPropertyInspector, error) {
@@ -68,7 +68,7 @@ func (p *ProgramPropertyInspector) Parse() (*programPropertyInspector, error) {
 
 	return &programPropertyInspector{
 		IP:      ip,
-		Input:   uint16(input),
-		MeIndex: uint16(meIndex + 1),
+		Input:   solveATEMVideoInput(input),
+		MeIndex: uint8(meIndex),
 	}, nil
 }

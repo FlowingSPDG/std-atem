@@ -2,7 +2,6 @@ package stdatem
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"time"
@@ -13,28 +12,31 @@ import (
 	"github.com/FlowingSPDG/streamdeck"
 	sdcontext "github.com/FlowingSPDG/streamdeck/context"
 	"github.com/puzpuzpuz/xsync"
+	"github.com/samber/lo"
 	"golang.org/x/xerrors"
 )
 
 // App メインエンジン
 type App struct {
-	atems         *atems             // コンテキスト（ボタン）ごとの設定
-	logger        logger.Logger      // ログ
-	sd            *streamdeck.Client // StreamDeckクライアント
-	store         setting.SettingStore[*previewPropertyInspector]
-	refCounts     *xsync.MapOf[string, int]
-	activeClients *xsync.MapOf[string, *ATEMInstance]
+	atems               *atems             // コンテキスト（ボタン）ごとの設定
+	logger              logger.Logger      // ログ
+	sd                  *streamdeck.Client // StreamDeckクライアント
+	previewSettingStore setting.SettingStore[*previewPropertyInspector]
+	programSettingStore setting.SettingStore[*programPropertyInspector]
+	refCounts           *xsync.MapOf[string, int]
+	activeClients       *xsync.MapOf[string, *ATEMInstance]
 }
 
 // NewApp Appメインエンジンを初期化する
 func NewApp(ctx context.Context, logger logger.Logger, sd *streamdeck.Client) (*App, error) {
 	app := &App{
-		atems:         newAtems(logger),
-		logger:        logger,
-		sd:            sd,
-		store:         setting.NewSettingStore[*previewPropertyInspector](),
-		refCounts:     xsync.NewMapOf[int](),
-		activeClients: xsync.NewMapOf[*ATEMInstance](),
+		atems:               newAtems(logger),
+		logger:              logger,
+		sd:                  sd,
+		previewSettingStore: setting.NewSettingStore[*previewPropertyInspector](),
+		programSettingStore: setting.NewSettingStore[*programPropertyInspector](),
+		refCounts:           xsync.NewMapOf[int](),
+		activeClients:       xsync.NewMapOf[*ATEMInstance](),
 	}
 
 	// SDのセットアップ
@@ -49,7 +51,7 @@ func NewApp(ctx context.Context, logger logger.Logger, sd *streamdeck.Client) (*
 }
 
 // addATEMHost 新しいATEMホストを追加し、接続をセットアップする
-func (a *App) addATEMHost(ctx context.Context, contextID string, ip string, debug bool) error {
+func (a *App) addATEMHost(ctx context.Context, action string, contextID string, ip string, debug bool) error {
 	msg := fmt.Sprintf("ATEMホスト %s を追加中...", ip)
 	a.logger.Debug(ctx, msg)
 
@@ -59,11 +61,12 @@ func (a *App) addATEMHost(ctx context.Context, contextID string, ip string, debu
 		if !ok {
 			a.logger.Error(ctx, "ATEMが見つかりません")
 			return xerrors.New("ATEMが見つかりません")
+		} else {
+			contexts = append(contexts, actionAndContext{action: action, context: contextID})
+			a.atems.contextsByIP.Store(ip, contexts)
+			a.atems.Store(ctx, action, ip, contextID, instance)
+			return nil
 		}
-		contexts = append(contexts, contextID)
-		a.atems.contextsByIP.Store(ip, contexts)
-		a.atems.Store(ctx, ip, contextID, instance)
-		return nil
 	}
 
 	instance := &ATEMInstance{
@@ -71,7 +74,7 @@ func (a *App) addATEMHost(ctx context.Context, contextID string, ip string, debu
 		reconnectCh: make(chan struct{}, 1),
 	}
 
-	a.atems.Store(ctx, ip, contextID, instance)
+	a.atems.Store(ctx, action, ip, contextID, instance)
 
 	instance.client.On("connected", func() {
 		a.logger.Debug(ctx, fmt.Sprintf("ATEM %s に接続しました", ip))
@@ -81,29 +84,70 @@ func (a *App) addATEMHost(ctx context.Context, contextID string, ip string, debu
 		a.logger.Debug(ctx, "PrvI.change")
 
 		// 紐づいたContextを取得
-		contexts, ok := a.atems.SolveContextsByIP(ctx, ip)
+		actions, ok := a.atems.SolveContextsByIP(ctx, ip)
 		if !ok {
-			a.logger.Error(ctx, "ATEMが見つかりません")
+			a.logger.Error(ctx, "PrvI.change ATEMが見つかりません")
 			return
 		}
-		a.logger.Debug(ctx, "PrvI.change contexts:%v", contexts)
+		a.logger.Debug(ctx, "PrvI.change actions:%v", actions)
+		actions = lo.Filter(actions, func(action actionAndContext, _ int) bool {
+			return action.action == setPreviewAction
+		})
+		a.logger.Debug(ctx, "PrvI.change contexts:%v", actions)
 
-		for _, context := range contexts {
-			setting, ok := a.store.Load(context)
+		for _, action := range actions {
+			previewSetting, ok := a.previewSettingStore.Load(action.context)
 			if !ok {
-				a.logger.Error(ctx, "ATEMが見つかりません")
+				a.logger.Error(ctx, "previewSettingが見つかりません")
 				return
 			}
 
 			// TODO: M/Eが違う場合は無視する
-			a.logger.Debug(ctx, "PrvI.change input:%d meIndex:%d PreviewInput:%v", setting.Input, setting.MeIndex, instance.client.PreviewInput)
-			isActive := uint8(setting.Input) == uint8(instance.client.PreviewInput.Index)
-			a.logger.Debug(ctx, "PrvI.change setting:%v actual:%d isActive:%t", setting, instance.client.PreviewInput.Index, isActive)
+			a.logger.Debug(ctx, "PrvI.change input:%d meIndex:%d PreviewInput:%v", previewSetting.Input, previewSetting.MeIndex, instance.client.PreviewInput)
+			isActive := uint8(previewSetting.Input) == uint8(instance.client.PreviewInput.Index)
+			a.logger.Debug(ctx, "PrvI.change setting:%v actual:%d isActive:%t", previewSetting, instance.client.PreviewInput.Index, isActive)
 
 			// タリーを反映
-			sdctx := sdcontext.WithContext(ctx, context)
+			sdctx := sdcontext.WithContext(ctx, action.context)
 			if isActive {
 				a.sd.SetImage(sdctx, tallyPreview, streamdeck.HardwareAndSoftware)
+			} else {
+				a.sd.SetImage(sdctx, tallyInactive, streamdeck.HardwareAndSoftware)
+			}
+		}
+	})
+
+	instance.client.On("PrgI.change", func() {
+		a.logger.Debug(ctx, "PrgI.change")
+
+		// 紐づいたContextを取得
+		actions, ok := a.atems.SolveContextsByIP(ctx, ip)
+		if !ok {
+			a.logger.Error(ctx, "PrgI.change ATEMが見つかりません")
+			return
+		}
+		a.logger.Debug(ctx, "PrgI.change actions:%v", actions)
+		actions = lo.Filter(actions, func(action actionAndContext, _ int) bool {
+			return action.action == setProgramAction
+		})
+		a.logger.Debug(ctx, "PrgI.change contexts:%v", actions)
+
+		for _, action := range actions {
+			programSetting, ok := a.programSettingStore.Load(action.context)
+			if !ok {
+				a.logger.Error(ctx, "PrgI.change programSettingが見つかりません")
+				return
+			}
+
+			// TODO: M/Eが違う場合は無視する
+			a.logger.Debug(ctx, "PrgI.change input:%d meIndex:%d PreviewInput:%v", programSetting.Input, programSetting.MeIndex, instance.client.ProgramInput.Index)
+			isActive := uint8(programSetting.Input) == uint8(instance.client.ProgramInput.Index)
+			a.logger.Debug(ctx, "PrgI.change setting:%v actual:%d isActive:%t", programSetting, instance.client.ProgramInput.Index, isActive)
+
+			// タリーを反映
+			sdctx := sdcontext.WithContext(ctx, action.context)
+			if isActive {
+				a.sd.SetImage(sdctx, tallyProgram, streamdeck.HardwareAndSoftware)
 			} else {
 				a.sd.SetImage(sdctx, tallyInactive, streamdeck.HardwareAndSoftware)
 			}
@@ -279,152 +323,6 @@ func solveATEMVideoInput(input int64) atem.VideoInputType {
 	default:
 		return atem.VideoBlack
 	}
-}
-
-// PRVKeyDownHandler ATEM PRVを設定
-func (a *App) PRVKeyDownHandler(ctx context.Context, client *streamdeck.Client, event streamdeck.Event) error {
-	var payload streamdeck.KeyDownPayload[PreviewPropertyInspector]
-	if err := json.Unmarshal(event.Payload, &payload); err != nil {
-		a.logger.Error(ctx, fmt.Sprintf("payloadのアンマーシャルに失敗: %v", err))
-		return xerrors.Errorf("payloadのアンマーシャルに失敗: %w", err)
-	}
-
-	parsed, err := payload.Settings.Parse()
-	if err != nil {
-		a.logger.Error(ctx, fmt.Sprintf("payloadのパースに失敗: %v", err))
-		return xerrors.Errorf("payloadのパースに失敗: %w", err)
-	}
-
-	msg := fmt.Sprintf("PRV %v でKeyDown", parsed)
-	a.logger.Debug(ctx, msg)
-
-	instance, ok := a.atems.SolveATEMByContext(ctx, event.Context)
-	if !ok {
-		a.logger.Error(ctx, "ATEMが見つかりません")
-		return xerrors.New("ATEMが見つかりません")
-	}
-
-	a.logger.Debug(ctx, "PRVKeyDownHandler input:%d meIndex:%d", parsed.Input, parsed.MeIndex)
-
-	instance.client.SetPreviewInput(parsed.Input, parsed.MeIndex)
-	a.logger.Debug(ctx, "PRVKeyDownHandler 完了")
-	return nil
-}
-
-// PRVWillAppearHandler ATEM PRVを設定
-func (a *App) PRVWillAppearHandler(ctx context.Context, client *streamdeck.Client, event streamdeck.Event) error {
-	var payload streamdeck.WillAppearPayload[*PreviewPropertyInspector]
-	if err := json.Unmarshal(event.Payload, &payload); err != nil {
-		a.logger.Error(ctx, fmt.Sprintf("payloadのアンマーシャルに失敗: %v", err))
-		return xerrors.Errorf("payloadのアンマーシャルに失敗: %w", err)
-	}
-	parsed, err := payload.Settings.Parse()
-	if err != nil {
-		a.logger.Error(ctx, fmt.Sprintf("payloadのパースに失敗: %v", err))
-		return xerrors.Errorf("payloadのパースに失敗: %w", err)
-	}
-
-	msg := fmt.Sprintf("PRV %#v でWillAppear", parsed)
-	a.logger.Debug(ctx, msg)
-
-	a.store.Store(event.Context, parsed)
-
-	// 新しいインスタンスを初期化
-	if err := a.addATEMHost(ctx, event.Context, parsed.IP, false); err != nil {
-		return xerrors.Errorf("ATEMホストの追加に失敗: %w", err)
-	}
-
-	return nil
-}
-
-// PGMKeyDownHandler ATEM PGMを設定
-func (a *App) PGMKeyDownHandler(ctx context.Context, client *streamdeck.Client, event streamdeck.Event) error {
-	var payload streamdeck.KeyDownPayload[ProgramPropertyInspector]
-	if err := json.Unmarshal(event.Payload, &payload); err != nil {
-		a.logger.Error(ctx, fmt.Sprintf("payloadのアンマーシャルに失敗: %v", err))
-		return xerrors.Errorf("payloadのアンマーシャルに失敗: %w", err)
-	}
-
-	msg := fmt.Sprintf("PGM %v でKeyDown", payload.Settings)
-	a.logger.Debug(ctx, msg)
-
-	instance, ok := a.atems.SolveATEMByContext(ctx, event.Context)
-	if !ok {
-		return xerrors.New("ATEMが見つかりません")
-	}
-
-	input, err := payload.Settings.Input.Int64()
-	if err != nil {
-		return xerrors.Errorf("inputをint64に変換できません: %w", err)
-	}
-
-	instance.client.SetProgramInput(atem.VideoInputType(input), uint8(input))
-	return nil
-}
-
-// PGMWillAppearHandler ATEM PGMを設定
-func (a *App) PGMWillAppearHandler(ctx context.Context, client *streamdeck.Client, event streamdeck.Event) error {
-	var payload streamdeck.WillAppearPayload[ProgramPropertyInspector]
-	if err := json.Unmarshal(event.Payload, &payload); err != nil {
-		a.logger.Error(ctx, fmt.Sprintf("payloadのアンマーシャルに失敗: %v", err))
-		return xerrors.Errorf("payloadのアンマーシャルに失敗: %w", err)
-	}
-
-	msg := fmt.Sprintf("PGM %v でWillAppear", payload.Settings)
-	a.logger.Debug(ctx, msg)
-
-	// 新しいインスタンスを初期化
-	if err := a.addATEMHost(ctx, event.Context, payload.Settings.IP, true); err != nil {
-		return xerrors.Errorf("ATEMホストの追加に失敗: %w", err)
-	}
-
-	return nil
-}
-
-// PRVWillDisappearHandler プレビューのボタン非表示を処理
-func (a *App) PRVWillDisappearHandler(ctx context.Context, client *streamdeck.Client, event streamdeck.Event) error {
-	var payload streamdeck.WillDisappearPayload[PreviewPropertyInspector]
-	if err := json.Unmarshal(event.Payload, &payload); err != nil {
-		a.logger.Error(ctx, fmt.Sprintf("payloadのアンマーシャルに失敗: %v", err))
-		return xerrors.Errorf("payloadのアンマーシャルに失敗: %w", err)
-	}
-	a.handleDisappear(ctx, payload.Settings.IP)
-	return nil
-}
-
-// PGMWillDisappearHandler プログラムのボタン非表示を処理
-func (a *App) PGMWillDisappearHandler(ctx context.Context, client *streamdeck.Client, event streamdeck.Event) error {
-	var payload streamdeck.WillDisappearPayload[ProgramPropertyInspector]
-	if err := json.Unmarshal(event.Payload, &payload); err != nil {
-		a.logger.Error(ctx, fmt.Sprintf("payloadのアンマーシャルに失敗: %v", err))
-		return xerrors.Errorf("payloadのアンマーシャルに失敗: %w", err)
-	}
-	a.handleDisappear(ctx, payload.Settings.IP)
-	return nil
-}
-
-// PRVDidReceiveSettingsHandler PRVの設定を受け取る
-func (a *App) PRVDidReceiveSettingsHandler(ctx context.Context, client *streamdeck.Client, event streamdeck.Event) error {
-	var payload streamdeck.DidReceiveSettingsPayload[PreviewPropertyInspector]
-	if err := json.Unmarshal(event.Payload, &payload); err != nil {
-		a.logger.Error(ctx, fmt.Sprintf("payloadのアンマーシャルに失敗: %v", err))
-		return xerrors.Errorf("payloadのアンマーシャルに失敗: %w", err)
-	}
-
-	parsed, err := payload.Settings.Parse()
-	if err != nil {
-		a.logger.Error(ctx, fmt.Sprintf("payloadのパースに失敗: %v", err))
-		return xerrors.Errorf("payloadのパースに失敗: %w", err)
-	}
-
-	// 新しいインスタンスを初期化
-	if err := a.addATEMHost(ctx, event.Context, parsed.IP, true); err != nil {
-		return xerrors.Errorf("ATEMホストの追加に失敗: %w", err)
-	}
-
-	a.store.Store(event.Context, parsed)
-
-	return nil
 }
 
 // handleDisappear 接続の参照カウントを管理
