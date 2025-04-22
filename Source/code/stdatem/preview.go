@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 
 	"github.com/FlowingSPDG/streamdeck"
 	"golang.org/x/xerrors"
@@ -24,6 +25,12 @@ func (a *App) PRVWillAppearHandler(ctx context.Context, client *streamdeck.Clien
 
 	msg := fmt.Sprintf("PRV %#v でWillAppear", parsed)
 	a.logger.Debug(ctx, msg)
+
+	// IPの整合性チェック
+	if net.ParseIP(parsed.IP) == nil {
+		a.logger.Error(ctx, "IPが不正です")
+		return xerrors.New("IPが不正です")
+	}
 
 	a.previewSettingStore.Store(event.Context, parsed)
 
@@ -97,6 +104,13 @@ func (a *App) PRVDidReceiveSettingsHandler(ctx context.Context, client *streamde
 
 	if oldSettings.IP != parsed.IP {
 		a.logger.Debug(ctx, "PRVDidReceiveSettingsHandler IPが変更されました")
+
+		// IPの整合性チェック
+		if net.ParseIP(parsed.IP) == nil {
+			a.logger.Error(ctx, "IPが不正です")
+			return xerrors.New("IPが不正です")
+		}
+
 		// 新しいインスタンスを初期化
 		if err := a.addATEMHost(ctx, setPreviewAction, event.Context, parsed.IP, true); err != nil {
 			return xerrors.Errorf("ATEMホストの追加に失敗: %w", err)

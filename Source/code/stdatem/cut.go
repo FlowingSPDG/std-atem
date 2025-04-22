@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 
 	"github.com/FlowingSPDG/streamdeck"
 	"golang.org/x/xerrors"
@@ -19,6 +20,12 @@ func (a *App) CutWillAppearHandler(ctx context.Context, client *streamdeck.Clien
 
 	msg := fmt.Sprintf("Cut %#v でWillAppear", payload.Settings)
 	a.logger.Debug(ctx, msg)
+
+	// IPの整合性チェック
+	if net.ParseIP(payload.Settings.IP) == nil {
+		a.logger.Error(ctx, "IPが不正です")
+		return xerrors.New("IPが不正です")
+	}
 
 	// 新しいインスタンスを初期化
 	if err := a.addATEMHost(ctx, cutAction, event.Context, payload.Settings.IP, false); err != nil {
@@ -69,6 +76,12 @@ func (a *App) CutDidReceiveSettingsHandler(ctx context.Context, client *streamde
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
 		a.logger.Error(ctx, fmt.Sprintf("payloadのアンマーシャルに失敗: %v", err))
 		return xerrors.Errorf("payloadのアンマーシャルに失敗: %w", err)
+	}
+
+	// IPの整合性チェック
+	if net.ParseIP(payload.Settings.IP) == nil {
+		a.logger.Error(ctx, "IPが不正です")
+		return xerrors.New("IPが不正です")
 	}
 
 	// 新しいインスタンスを初期化

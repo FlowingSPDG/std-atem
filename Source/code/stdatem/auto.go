@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 
 	"github.com/FlowingSPDG/streamdeck"
 	"golang.org/x/xerrors"
@@ -19,6 +20,12 @@ func (a *App) AutoWillAppearHandler(ctx context.Context, client *streamdeck.Clie
 
 	msg := fmt.Sprintf("Auto %#v でWillAppear", payload.Settings)
 	a.logger.Debug(ctx, msg)
+
+	// IPの整合性チェック
+	if net.ParseIP(payload.Settings.IP) == nil {
+		a.logger.Error(ctx, "IPが不正です")
+		return xerrors.New("IPが不正です")
+	}
 
 	// 新しいインスタンスを初期化
 	if err := a.addATEMHost(ctx, autoAction, event.Context, payload.Settings.IP, false); err != nil {
@@ -71,7 +78,11 @@ func (a *App) AutoDidReceiveSettingsHandler(ctx context.Context, client *streamd
 		return xerrors.Errorf("payloadのアンマーシャルに失敗: %w", err)
 	}
 
-	// 新しいインスタンスを初期化
+	// IPの整合性チェック
+	if net.ParseIP(payload.Settings.IP) == nil {
+		a.logger.Error(ctx, "IPが不正です")
+		return xerrors.New("IPが不正です")
+	}
 
 	// 新しいインスタンスを初期化
 	if err := a.addATEMHost(ctx, autoAction, event.Context, payload.Settings.IP, true); err != nil {

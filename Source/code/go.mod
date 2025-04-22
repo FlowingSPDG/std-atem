@@ -18,6 +18,6 @@ require (
 	nhooyr.io/websocket v1.8.17 // indirect
 )
 
-replace github.com/FlowingSPDG/streamdeck => ../../../streamdeck
+// replace github.com/FlowingSPDG/streamdeck => ../../../streamdeck
 
-replace github.com/FlowingSPDG/go-atem => ../../../go-atem
+// replace github.com/FlowingSPDG/go-atem => ../../../go-atem
