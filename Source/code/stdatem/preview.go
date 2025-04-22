@@ -90,9 +90,32 @@ func (a *App) PRVDidReceiveSettingsHandler(ctx context.Context, client *streamde
 		return xerrors.Errorf("payloadのパースに失敗: %w", err)
 	}
 
-	// 新しいインスタンスを初期化
-	if err := a.addATEMHost(ctx, setPreviewAction, event.Context, parsed.IP, true); err != nil {
-		return xerrors.Errorf("ATEMホストの追加に失敗: %w", err)
+	oldSettings, ok := a.previewSettingStore.Load(event.Context)
+	if !ok {
+		a.logger.Error(ctx, "PRVDidReceiveSettingsHandler 設定が見つかりません")
+	}
+
+	if oldSettings.IP != parsed.IP {
+		a.logger.Debug(ctx, "PRVDidReceiveSettingsHandler IPが変更されました")
+		// 新しいインスタンスを初期化
+		if err := a.addATEMHost(ctx, setPreviewAction, event.Context, parsed.IP, true); err != nil {
+			return xerrors.Errorf("ATEMホストの追加に失敗: %w", err)
+		}
+
+		// 既存のコンテキストを削除し、新しいコンテキストを保存する
+		// 既存のATEMインスタンスが他のコンテキストで使用されていない場合は削除する
+		a.connectionManager.DeleteATEMByContext(ctx, event.Context)
+
+		// 新しいATEMインスタンスを取得
+		instance, ok := a.connectionManager.SolveATEMByIP(ctx, parsed.IP)
+		if !ok {
+			a.logger.Error(ctx, "PRVDidReceiveSettingsHandler 新しいATEMインスタンスが見つかりません")
+			return xerrors.New("PRVDidReceiveSettingsHandler 新しいATEMインスタンスが見つかりません")
+		}
+
+		// 新しいコンテキストを保存
+		a.connectionManager.Store(ctx, setPreviewAction, parsed.IP, event.Context, instance)
+		a.logger.Debug(ctx, "PRVDidReceiveSettingsHandler コンテキストを更新しました")
 	}
 
 	a.previewSettingStore.Store(event.Context, parsed)
