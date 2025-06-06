@@ -90,6 +90,9 @@ func (a *App) PRVDidReceiveSettingsHandler(ctx context.Context, client *streamde
 		return xerrors.Errorf("payloadのパースに失敗: %w", err)
 	}
 
+	// Handle IP change if this context was using a different IP
+	a.connectionManager.UpdateContextIP(ctx, event.Context, parsed.IP)
+
 	// 新しいインスタンスを初期化
 	if err := a.addATEMHost(ctx, setPreviewAction, event.Context, parsed.IP, true); err != nil {
 		return xerrors.Errorf("ATEMホストの追加に失敗: %w", err)
