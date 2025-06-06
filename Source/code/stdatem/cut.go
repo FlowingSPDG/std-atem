@@ -71,6 +71,9 @@ func (a *App) CutDidReceiveSettingsHandler(ctx context.Context, client *streamde
 		return xerrors.Errorf("payloadのアンマーシャルに失敗: %w", err)
 	}
 
+	// Handle IP change if this context was using a different IP
+	a.connectionManager.UpdateContextIP(ctx, event.Context, payload.Settings.IP)
+
 	// 新しいインスタンスを初期化
 	if err := a.addATEMHost(ctx, cutAction, event.Context, payload.Settings.IP, true); err != nil {
 		return xerrors.Errorf("ATEMホストの追加に失敗: %w", err)

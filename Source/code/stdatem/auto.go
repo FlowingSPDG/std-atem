@@ -71,7 +71,8 @@ func (a *App) AutoDidReceiveSettingsHandler(ctx context.Context, client *streamd
 		return xerrors.Errorf("payloadのアンマーシャルに失敗: %w", err)
 	}
 
-	// 新しいインスタンスを初期化
+	// Handle IP change if this context was using a different IP
+	a.connectionManager.UpdateContextIP(ctx, event.Context, payload.Settings.IP)
 
 	// 新しいインスタンスを初期化
 	if err := a.addATEMHost(ctx, autoAction, event.Context, payload.Settings.IP, true); err != nil {
