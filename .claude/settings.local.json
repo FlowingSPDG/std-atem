@@ -10,7 +10,13 @@
       "Bash(gopls:*)",
       "mcp__serena__activate_project",
       "Bash(sudo apt:*)",
-      "Bash(sudo apt install:*)"
+      "Bash(sudo apt install:*)",
+      "mcp__serena__get_symbols_overview",
+      "Bash(go test:*)",
+      "Bash(go vet:*)",
+      "Bash(go build:*)",
+      "mcp__serena__list_dir",
+      "Bash(go mod download:*)"
     ],
     "deny": []
   }

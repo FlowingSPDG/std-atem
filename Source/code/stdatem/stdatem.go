@@ -12,7 +12,6 @@ import (
 	"github.com/FlowingSPDG/std-atem/Source/code/setting"
 	"github.com/FlowingSPDG/streamdeck"
 	sdcontext "github.com/FlowingSPDG/streamdeck/context"
-	"github.com/puzpuzpuz/xsync"
 	"github.com/samber/lo"
 	"golang.org/x/xerrors"
 )
@@ -24,8 +23,7 @@ type App struct {
 	sd                  *streamdeck.Client                   // StreamDeckクライアント
 	previewSettingStore setting.SettingStore[*previewPropertyInspector]
 	programSettingStore setting.SettingStore[*programPropertyInspector]
-	refCounts           *xsync.MapOf[string, int]
-	activeClients       *xsync.MapOf[string, *connectionmanager.ATEMInstance]
+	// refCounts and activeClients removed - now managed by ConnectionManager
 }
 
 // NewApp Appメインエンジンを初期化する
@@ -36,8 +34,6 @@ func NewApp(ctx context.Context, logger logger.Logger, sd *streamdeck.Client) (*
 		sd:                  sd,
 		previewSettingStore: setting.NewSettingStore[*previewPropertyInspector](),
 		programSettingStore: setting.NewSettingStore[*programPropertyInspector](),
-		refCounts:           xsync.NewMapOf[int](),
-		activeClients:       xsync.NewMapOf[*connectionmanager.ATEMInstance](),
 	}
 
 	// SDのセットアップ
@@ -58,15 +54,9 @@ func (a *App) addATEMHost(ctx context.Context, action string, contextID string, 
 
 	if instance, ok := a.connectionManager.SolveATEMByIP(ctx, ip); ok {
 		a.logger.Debug(ctx, "ATEMホスト %s は既に存在します", ip)
-		contexts, ok := a.connectionManager.SolveContextsByIP(ctx, ip)
-		if !ok {
-			a.logger.Error(ctx, "ATEMが見つかりません")
-			return xerrors.New("ATEMが見つかりません")
-		} else {
-			contexts = append(contexts, connectionmanager.ActionAndContext{Action: action, Context: contextID})
-			a.connectionManager.Store(ctx, action, ip, contextID, instance)
-			return nil
-		}
+		// 既存接続を再利用し、新しいcontextを追加
+		a.connectionManager.Store(ctx, action, ip, contextID, instance)
+		return nil
 	}
 
 	instance := &connectionmanager.ATEMInstance{
@@ -170,9 +160,12 @@ func (a *App) addATEMHost(ctx context.Context, action string, contextID string, 
 		}
 	})
 
-	// 再接続ゴルーチンを開始
-	go a.reconnectionLoop(ctx, ip)
-	a.logger.Debug(ctx, "addATEMHost ip:%s 再接続ゴルーチンを開始", ip)
+	// 再接続ゴルーチンを開始（まだ実行されていない場合のみ）
+	if !a.connectionManager.IsReconnectGoroutineRunning(ip) {
+		a.connectionManager.SetReconnectGoroutineRunning(ip, true)
+		go a.reconnectionLoop(ctx, ip)
+		a.logger.Debug(ctx, "addATEMHost ip:%s 再接続ゴルーチンを開始", ip)
+	}
 	instance.ReconnectCh <- struct{}{}
 
 	return nil
@@ -214,27 +207,60 @@ func (a *App) setupSD() {
 // reconnectionLoop 特定のATEMホストの自動再接続を処理
 func (a *App) reconnectionLoop(ctx context.Context, ip string) {
 	a.logger.Debug(ctx, "reconnectionLoop ip:%s", ip)
+	defer func() {
+		// ゴルーチン終了時に状態をクリア
+		a.connectionManager.SetReconnectGoroutineRunning(ip, false)
+		a.logger.Debug(ctx, "reconnectionLoop ip:%s ゴルーチンを終了", ip)
+	}()
+	
 	instance, ok := a.connectionManager.SolveATEMByIP(ctx, ip)
 	if !ok {
 		a.logger.Error(ctx, "ATEMが見つかりません")
 		return
 	}
 
+	retryCount := 0
+	maxRetries := 10
+	
 	for {
 		select {
 		case <-ctx.Done():
 			a.logger.Debug(ctx, "reconnectionLoop ip:%s コンテキストが終了したため終了", ip)
 			return
 		case <-instance.ReconnectCh:
-			a.logger.Debug(ctx, "reconnectionLoop ip:%s 再接続をトリガーしました", ip)
+			a.logger.Debug(ctx, "reconnectionLoop ip:%s 再接続をトリガーしました (試行回数: %d)", ip, retryCount+1)
 			if err := instance.Client.Connect(); err != nil {
+				retryCount++
+				if retryCount >= maxRetries {
+					a.logger.Error(ctx, "reconnectionLoop ip:%s 最大リトライ回数(%d)に達しました", ip, maxRetries)
+					return
+				}
+				
+				// 指数バックオフ: 1秒, 2秒, 4秒, 8秒, 16秒, 30秒(最大)
+				backoffSeconds := 1 << retryCount
+				if backoffSeconds > 30 {
+					backoffSeconds = 30
+				}
+				backoffDuration := time.Duration(backoffSeconds) * time.Second
+				
+				a.logger.Debug(ctx, "reconnectionLoop ip:%s 接続失敗、%v後に再試行 (試行回数: %d/%d)", ip, backoffDuration, retryCount, maxRetries)
+				
 				// 再試行前に待機
-				time.Sleep(5 * time.Second)
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(backoffDuration):
+				}
+				
 				// 再試行
 				select {
 				case instance.ReconnectCh <- struct{}{}:
 				default:
 				}
+			} else {
+				// 接続成功時はリトライカウントをリセット
+				retryCount = 0
+				a.logger.Debug(ctx, "reconnectionLoop ip:%s 接続成功、リトライカウントをリセット", ip)
 			}
 		}
 	}
