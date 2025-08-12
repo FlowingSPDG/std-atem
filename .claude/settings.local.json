@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(task:*)",
+      "Bash(mkdir:*)",
+      "mcp__serena__check_onboarding_performed",
+      "Bash(go install:*)",
+      "Bash(find:*)",
+      "Bash(export PATH=\"$PATH:/home/flowing/go/bin\")",
+      "Bash(gopls:*)",
+      "mcp__serena__activate_project",
+      "Bash(sudo apt:*)",
+      "Bash(sudo apt install:*)"
+    ],
+    "deny": []
+  }
+}
