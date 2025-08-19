@@ -2,6 +2,4 @@ version: '3'
 
 vars:
   AppName: dev.flowingspdg.atem.sdPlugin
-  CodeDir: Source/code
-  PiDir: Source/pi
   ReleaseDir: Release

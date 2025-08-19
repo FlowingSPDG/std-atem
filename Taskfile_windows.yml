@@ -7,6 +7,7 @@ includes:
   
 tasks:
   release:
+    desc: Create Windows release package
     deps:
       - build
     cmds:

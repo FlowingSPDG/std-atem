@@ -7,6 +7,7 @@ includes:
   
 tasks:
   release:
+    desc: Create macOS release package
     deps:
       - build
     cmds:

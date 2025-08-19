@@ -1,0 +1,19 @@
+version: '3'
+
+includes:
+  vars: 
+    taskfile: TaskfileVars.yml
+    flatten: true
+  
+tasks:
+  release:
+    desc: Create release package for WSL2 environment (builds both Windows and macOS binaries)
+    deps:
+      - build
+    preconditions:
+      - sh: '[ -n "$WSL_DISTRO_NAME" ]'
+        msg: "This task can only be run in WSL2 environment"
+      - sh: '[ -f "./DistributionTool.exe" ]'
+        msg: "DistributionTool.exe not found"
+    cmds:
+      - ./DistributionTool.exe -b -i {{.AppName}} -o {{.ReleaseDir}}

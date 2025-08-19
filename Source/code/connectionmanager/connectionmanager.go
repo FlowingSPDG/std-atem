@@ -21,223 +21,199 @@ type ATEMInstance struct {
 	ReconnectCh chan struct{}
 }
 
+// ConnectionInfo 接続情報を統合管理
+type ConnectionInfo struct {
+	Instance         *ATEMInstance
+	Contexts         []string
+	UsageCount       int
+	ReconnectRunning bool
+}
+
 type ConnectionManager struct {
-	atemByIP           *xsync.MapOf[string, *ATEMInstance]      // host: instance
-	atemByContext      *xsync.MapOf[string, *ATEMInstance]      // context: binding
-	contextsByIP       *xsync.MapOf[string, []ActionAndContext] // host: contexts
-	usageCounts        *xsync.MapOf[string, int]                // host: usage count
-	contextToIP        *xsync.MapOf[string, string]             // context: ip mapping
-	reconnectGoroutines *xsync.MapOf[string, bool]              // host: goroutine running status
-	storeMutex         sync.Mutex                               // mutex for atomic Store operations
-	logger             logger.Logger
+	connections *xsync.MapOf[string, *ConnectionInfo] // IP -> ConnectionInfo
+	contexts    *xsync.MapOf[string, string]          // Context -> IP
+	logger      logger.Logger
+	storeMutex  sync.Mutex // mutex for atomic Store operations
 }
 
 func NewConnectionManager(logger logger.Logger) *ConnectionManager {
 	return &ConnectionManager{
-		atemByIP:           xsync.NewMapOf[*ATEMInstance](),
-		atemByContext:      xsync.NewMapOf[*ATEMInstance](),
-		contextsByIP:       xsync.NewMapOf[[]ActionAndContext](),
-		usageCounts:        xsync.NewMapOf[int](),
-		contextToIP:        xsync.NewMapOf[string](),
-		reconnectGoroutines: xsync.NewMapOf[bool](),
-		logger:             logger,
+		connections: xsync.NewMapOf[*ConnectionInfo](),
+		contexts:    xsync.NewMapOf[string](),
+		logger:      logger,
 	}
 }
 
 func (a *ConnectionManager) SolveATEMByIP(ctx context.Context, ip string) (*ATEMInstance, bool) {
 	a.logger.Debug(ctx, "SolveATEMByIP ip:%s", ip)
-	v, ok := a.atemByIP.Load(ip)
+	info, ok := a.connections.Load(ip)
 	if !ok {
 		a.logger.Error(ctx, "SolveATEMByIP ip:%s not found", ip)
 		return nil, false
 	}
-
-	return v, true
+	return info.Instance, true
 }
+
 func (a *ConnectionManager) SolveATEMByContext(ctx context.Context, context string) (*ATEMInstance, bool) {
 	a.logger.Debug(ctx, "SolveATEMByContext context:%s", context)
-	v, ok := a.atemByContext.Load(context)
+	ip, ok := a.contexts.Load(context)
 	if !ok {
 		a.logger.Error(ctx, "SolveATEMByContext context:%s not found", context)
 		return nil, false
 	}
-
-	return v, true
+	return a.SolveATEMByIP(ctx, ip)
 }
 
 func (a *ConnectionManager) SolveContextsByIP(ctx context.Context, ip string) ([]ActionAndContext, bool) {
 	a.logger.Debug(ctx, "SolveContextsByIP ip:%s", ip)
-	// ipからStreamDeck contextを取得する
-	contexts, ok := a.contextsByIP.Load(ip)
+	info, ok := a.connections.Load(ip)
 	if !ok {
 		a.logger.Error(ctx, "SolveContextsByIP ip:%s not found", ip)
 		return nil, false
 	}
 
+	// ActionAndContextの配列に変換
+	contexts := make([]ActionAndContext, 0, len(info.Contexts))
+	for _, contextID := range info.Contexts {
+		// ここではActionを特定できないため、空文字列を設定
+		// 必要に応じて、context -> action のマッピングを追加
+		contexts = append(contexts, ActionAndContext{
+			Action:  "", // TODO: action情報を追加する必要がある場合
+			Context: contextID,
+		})
+	}
 	return contexts, true
 }
 
 func (a *ConnectionManager) Store(ctx context.Context, action, ip, contextID string, at *ATEMInstance) {
 	a.logger.Debug(ctx, "Store action:%s ip:%s context:%s", action, ip, contextID)
-	
+
 	// Acquire mutex for atomic operation across all maps
 	a.storeMutex.Lock()
 	defer a.storeMutex.Unlock()
-	
-	a.atemByIP.Store(ip, at)
-	a.atemByContext.Store(contextID, at)
-	
+
 	// Check if this context was using a different IP before
-	oldIP, wasUsingDifferentIP := a.contextToIP.Load(contextID)
+	oldIP, wasUsingDifferentIP := a.contexts.Load(contextID)
 	if wasUsingDifferentIP && oldIP != ip {
 		a.logger.Debug(ctx, "Store context:%s changing from IP %s to %s", contextID, oldIP, ip)
-		
-		// Remove context from old IP's context list
-		if contexts, exists := a.contextsByIP.Load(oldIP); exists {
-			filteredContexts := make([]ActionAndContext, 0, len(contexts))
-			for _, ac := range contexts {
-				if ac.Context != contextID {
-					filteredContexts = append(filteredContexts, ac)
-				}
-			}
-			if len(filteredContexts) > 0 {
-				a.contextsByIP.Store(oldIP, filteredContexts)
-			} else {
-				a.contextsByIP.Delete(oldIP)
-			}
-		}
-		
-		// Decrement usage count for old IP atomically
-		if count, ok := a.usageCounts.Load(oldIP); ok {
-			newCount := count - 1
-			if newCount <= 0 {
-				a.usageCounts.Delete(oldIP)
-				// Schedule cleanup after mutex release
-				go func() {
-					delayCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-					context.AfterFunc(delayCtx, func() {
-						defer cancel()
-						a.cleanupUnusedATEM(ctx, oldIP)
-					})
-				}()
-			} else {
-				a.usageCounts.Store(oldIP, newCount)
-			}
-		}
+		a.removeContextFromIP(ctx, contextID, oldIP)
 	}
-	
-	a.contextToIP.Store(contextID, ip)
-	
-	// Update usage count only if this context is new or was using a different IP
-	if !wasUsingDifferentIP || oldIP != ip {
-		if count, ok := a.usageCounts.Load(ip); ok {
-			a.usageCounts.Store(ip, count+1)
-		} else {
-			a.usageCounts.Store(ip, 1)
+
+	// Update or create connection info
+	info, exists := a.connections.Load(ip)
+	if !exists {
+		info = &ConnectionInfo{
+			Instance:   at,
+			Contexts:   []string{contextID},
+			UsageCount: 1,
 		}
-		a.logger.Debug(ctx, "Store incremented usage for IP %s", ip)
-	}
-	
-	if contextIDs, ok := a.contextsByIP.Load(ip); !ok {
-		a.contextsByIP.Store(ip, []ActionAndContext{{Action: action, Context: contextID}})
 	} else {
-		// Check if this context is already in the list to avoid duplicates
+		// Check if context is already in the list to avoid duplicates
 		found := false
-		for _, ac := range contextIDs {
-			if ac.Context == contextID {
+		for _, existingContext := range info.Contexts {
+			if existingContext == contextID {
 				found = true
 				break
 			}
 		}
 		if !found {
-			a.contextsByIP.Store(ip, append(contextIDs, ActionAndContext{Action: action, Context: contextID}))
+			info.Contexts = append(info.Contexts, contextID)
+			info.UsageCount++
 		}
 	}
+
+	a.connections.Store(ip, info)
+	a.contexts.Store(contextID, ip)
 }
 
 func (a *ConnectionManager) DeleteATEMByIP(ctx context.Context, ip string) {
 	a.logger.Debug(ctx, "DeleteATEMByIP ip:%s", ip)
-	a.atemByIP.Delete(ip)
-
-	// 削除処理
-	a.logger.Debug(ctx, "Delete closing ATEM client ip:%s", ip)
-	at, ok := a.SolveATEMByIP(ctx, ip)
+	info, ok := a.connections.Load(ip)
 	if !ok {
 		return
 	}
-	at.Client.Close()
+
+	// Close ATEM client
+	if info.Instance != nil {
+		a.logger.Debug(ctx, "Delete closing ATEM client ip:%s", ip)
+		info.Instance.Client.Close()
+	}
+
+	a.connections.Delete(ip)
 }
 
 func (a *ConnectionManager) DeleteATEMByContext(ctx context.Context, contextID string) {
 	a.logger.Debug(ctx, "DeleteATEMByContext contextID:%s", contextID)
-	
-	// Acquire mutex for atomic operation across all maps
+
+	// Acquire mutex for atomic operation
 	a.storeMutex.Lock()
 	defer a.storeMutex.Unlock()
-	
-	// Get the IP this context was using
-	ip, ok := a.contextToIP.Load(contextID)
-	
-	a.atemByContext.Delete(contextID)
-	a.contextToIP.Delete(contextID)
 
-	// Remove context from contextsByIP and decrement usage count
-	if ok {
-		if contexts, exists := a.contextsByIP.Load(ip); exists {
-			filteredContexts := make([]ActionAndContext, 0, len(contexts))
-			for _, ac := range contexts {
-				if ac.Context != contextID {
-					filteredContexts = append(filteredContexts, ac)
-				}
-			}
-			if len(filteredContexts) > 0 {
-				a.contextsByIP.Store(ip, filteredContexts)
-			} else {
-				a.contextsByIP.Delete(ip)
-			}
-		}
-		
-		// Decrement usage count
-		if count, exists := a.usageCounts.Load(ip); exists {
-			newCount := count - 1
-			if newCount <= 0 {
-				a.usageCounts.Delete(ip)
-				// Schedule cleanup after mutex release
-				go func() {
-					delayCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-					context.AfterFunc(delayCtx, func() {
-						defer cancel()
-						a.cleanupUnusedATEM(ctx, ip)
-					})
-				}()
-			} else {
-				a.usageCounts.Store(ip, newCount)
-			}
-		}
+	// Get the IP this context was using
+	ip, ok := a.contexts.Load(contextID)
+	if !ok {
+		return
 	}
+
+	a.contexts.Delete(contextID)
+	a.removeContextFromIP(ctx, contextID, ip)
 }
 
 // UpdateContextIP handles when a context changes to a different IP
 func (a *ConnectionManager) UpdateContextIP(ctx context.Context, contextID string, newIP string) {
 	a.logger.Debug(ctx, "UpdateContextIP contextID:%s newIP:%s", contextID, newIP)
-	
+
 	// This functionality is now handled directly in Store method
 	// This method is kept for backward compatibility but does nothing
+}
+
+// removeContextFromIP removes a context from an IP's context list and handles cleanup
+func (a *ConnectionManager) removeContextFromIP(ctx context.Context, contextID, ip string) {
+	info, exists := a.connections.Load(ip)
+	if !exists {
+		return
+	}
+
+	// Remove context from the list
+	filteredContexts := make([]string, 0, len(info.Contexts))
+	for _, existingContext := range info.Contexts {
+		if existingContext != contextID {
+			filteredContexts = append(filteredContexts, existingContext)
+		}
+	}
+
+	info.Contexts = filteredContexts
+	info.UsageCount--
+
+	if info.UsageCount <= 0 {
+		// Schedule cleanup after mutex release
+		go func() {
+			delayCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			defer cancel()
+			time.AfterFunc(5*time.Second, func() {
+				a.cleanupUnusedATEM(delayCtx, ip)
+			})
+		}()
+	} else {
+		a.connections.Store(ip, info)
+	}
 }
 
 // cleanupUnusedATEM removes ATEM instance if it's still unused after delay
 func (a *ConnectionManager) cleanupUnusedATEM(ctx context.Context, ip string) {
 	a.logger.Debug(ctx, "cleanupUnusedATEM ip:%s checking if still unused", ip)
-	
+
 	// Double-check that the instance is still not in use
-	if _, stillInUse := a.usageCounts.Load(ip); !stillInUse {
-		if instance, exists := a.atemByIP.Load(ip); exists {
+	info, exists := a.connections.Load(ip)
+	if !exists || info.UsageCount <= 0 {
+		if exists && info.Instance != nil {
 			a.logger.Debug(ctx, "cleanupUnusedATEM ip:%s closing unused ATEM connection", ip)
-			instance.Client.Close()
-			a.atemByIP.Delete(ip)
-			a.contextsByIP.Delete(ip)
-			// Mark goroutine as stopped
-			a.reconnectGoroutines.Delete(ip)
+			info.Instance.Client.Close()
+		}
+		a.connections.Delete(ip)
+		// Mark goroutine as stopped
+		if exists {
+			info.ReconnectRunning = false
 		}
 	} else {
 		a.logger.Debug(ctx, "cleanupUnusedATEM ip:%s is now in use again, skipping cleanup", ip)
@@ -246,15 +222,15 @@ func (a *ConnectionManager) cleanupUnusedATEM(ctx context.Context, ip string) {
 
 // IsReconnectGoroutineRunning checks if a reconnect goroutine is already running for the IP
 func (a *ConnectionManager) IsReconnectGoroutineRunning(ip string) bool {
-	running, exists := a.reconnectGoroutines.Load(ip)
-	return exists && running
+	info, exists := a.connections.Load(ip)
+	return exists && info.ReconnectRunning
 }
 
 // SetReconnectGoroutineRunning marks a reconnect goroutine as running for the IP
 func (a *ConnectionManager) SetReconnectGoroutineRunning(ip string, running bool) {
-	if running {
-		a.reconnectGoroutines.Store(ip, true)
-	} else {
-		a.reconnectGoroutines.Delete(ip)
+	info, exists := a.connections.Load(ip)
+	if exists {
+		info.ReconnectRunning = running
+		a.connections.Store(ip, info)
 	}
 }

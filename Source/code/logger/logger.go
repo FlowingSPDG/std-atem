@@ -20,24 +20,9 @@ const (
 	CriticalLevel LogLevel = 1 << 4 // 16
 )
 
-func checkDebugLevel(level LogLevel) bool {
-	return level&DebugLevel != 0
-}
-
-func checkInfoLevel(level LogLevel) bool {
-	return level&InfoLevel != 0
-}
-
-func checkWarnLevel(level LogLevel) bool {
-	return level&WarnLevel != 0
-}
-
-func checkErrorLevel(level LogLevel) bool {
-	return level&ErrorLevel != 0
-}
-
-func checkCriticalLevel(level LogLevel) bool {
-	return level&CriticalLevel != 0
+// 汎用的なログレベルチェック関数
+func checkLogLevel(level LogLevel, targetLevel LogLevel) bool {
+	return level&targetLevel != 0
 }
 
 type Logger interface {
@@ -48,15 +33,24 @@ type Logger interface {
 	Error(ctx context.Context, format string, args ...any) error
 }
 
+// 共通のベースロガー構造体
+type baseLogger struct {
+	level LogLevel
+}
+
+func (l *baseLogger) shouldLog(targetLevel LogLevel) bool {
+	return checkLogLevel(l.level, targetLevel)
+}
+
 type streamDeckLogger struct {
+	baseLogger
 	client *streamdeck.Client
-	level  LogLevel
 }
 
 func NewStreamDeckLogger(client *streamdeck.Client, level LogLevel) Logger {
 	return &streamDeckLogger{
-		client: client,
-		level:  level,
+		baseLogger: baseLogger{level: level},
+		client:     client,
 	}
 }
 
@@ -72,36 +66,36 @@ func (l *streamDeckLogger) LogMessage(ctx context.Context, format string, args .
 }
 
 func (l *streamDeckLogger) Debug(ctx context.Context, format string, args ...any) error {
-	if !checkDebugLevel(l.level) {
+	if !l.shouldLog(DebugLevel) {
 		return nil
 	}
 	return l.LogMessage(ctx, "[DEBUG] "+format, args...)
 }
 
 func (l *streamDeckLogger) Info(ctx context.Context, format string, args ...any) error {
-	if !checkInfoLevel(l.level) {
+	if !l.shouldLog(InfoLevel) {
 		return nil
 	}
 	return l.LogMessage(ctx, "[INFO] "+format, args...)
 }
 
 func (l *streamDeckLogger) Warn(ctx context.Context, format string, args ...any) error {
-	if !checkWarnLevel(l.level) {
+	if !l.shouldLog(WarnLevel) {
 		return nil
 	}
 	return l.LogMessage(ctx, "[WARN] "+format, args...)
 }
 
 func (l *streamDeckLogger) Error(ctx context.Context, format string, args ...any) error {
-	if !checkErrorLevel(l.level) {
+	if !l.shouldLog(ErrorLevel) {
 		return nil
 	}
 	return l.LogMessage(ctx, "[ERROR] "+format, args...)
 }
 
 type fileLogger struct {
-	file  *os.File
-	level LogLevel
+	baseLogger
+	file *os.File
 }
 
 func NewFileLogger(ctx context.Context, level LogLevel) Logger {
@@ -110,8 +104,8 @@ func NewFileLogger(ctx context.Context, level LogLevel) Logger {
 		panic(err)
 	}
 	return &fileLogger{
-		file:  file,
-		level: level,
+		baseLogger: baseLogger{level: level},
+		file:       file,
 	}
 }
 
@@ -125,42 +119,42 @@ func (l *fileLogger) LogMessage(ctx context.Context, format string, args ...any)
 }
 
 func (l *fileLogger) Debug(ctx context.Context, format string, args ...any) error {
-	if !checkDebugLevel(l.level) {
+	if !l.shouldLog(DebugLevel) {
 		return nil
 	}
 	return l.LogMessage(ctx, "[DEBUG] "+format, args...)
 }
 
 func (l *fileLogger) Info(ctx context.Context, format string, args ...any) error {
-	if !checkInfoLevel(l.level) {
+	if !l.shouldLog(InfoLevel) {
 		return nil
 	}
 	return l.LogMessage(ctx, "[INFO] "+format, args...)
 }
 
 func (l *fileLogger) Warn(ctx context.Context, format string, args ...any) error {
-	if !checkWarnLevel(l.level) {
+	if !l.shouldLog(WarnLevel) {
 		return nil
 	}
 	return l.LogMessage(ctx, "[WARN] "+format, args...)
 }
 
 func (l *fileLogger) Error(ctx context.Context, format string, args ...any) error {
-	if !checkErrorLevel(l.level) {
+	if !l.shouldLog(ErrorLevel) {
 		return nil
 	}
 	return l.LogMessage(ctx, "[ERROR] "+format, args...)
 }
 
 type multiLogger struct {
+	baseLogger
 	loggers []Logger
-	level   LogLevel
 }
 
 func NewMultiLogger(level LogLevel, loggers ...Logger) Logger {
 	return &multiLogger{
-		loggers: loggers,
-		level:   level,
+		baseLogger: baseLogger{level: level},
+		loggers:    loggers,
 	}
 }
 
@@ -172,7 +166,7 @@ func (l *multiLogger) LogMessage(ctx context.Context, format string, args ...any
 }
 
 func (l *multiLogger) Debug(ctx context.Context, format string, args ...any) error {
-	if !checkDebugLevel(l.level) {
+	if !l.shouldLog(DebugLevel) {
 		return nil
 	}
 	for _, logger := range l.loggers {
@@ -182,7 +176,7 @@ func (l *multiLogger) Debug(ctx context.Context, format string, args ...any) err
 }
 
 func (l *multiLogger) Info(ctx context.Context, format string, args ...any) error {
-	if !checkInfoLevel(l.level) {
+	if !l.shouldLog(InfoLevel) {
 		return nil
 	}
 	for _, logger := range l.loggers {
@@ -192,7 +186,7 @@ func (l *multiLogger) Info(ctx context.Context, format string, args ...any) erro
 }
 
 func (l *multiLogger) Warn(ctx context.Context, format string, args ...any) error {
-	if !checkWarnLevel(l.level) {
+	if !l.shouldLog(WarnLevel) {
 		return nil
 	}
 	for _, logger := range l.loggers {
@@ -202,7 +196,7 @@ func (l *multiLogger) Warn(ctx context.Context, format string, args ...any) erro
 }
 
 func (l *multiLogger) Error(ctx context.Context, format string, args ...any) error {
-	if !checkErrorLevel(l.level) {
+	if !l.shouldLog(ErrorLevel) {
 		return nil
 	}
 	for _, logger := range l.loggers {

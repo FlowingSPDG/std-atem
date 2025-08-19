@@ -3,7 +3,6 @@ package stdatem
 import (
 	"context"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/FlowingSPDG/go-atem"
@@ -13,7 +12,6 @@ import (
 	"github.com/FlowingSPDG/streamdeck"
 	sdcontext "github.com/FlowingSPDG/streamdeck/context"
 	"github.com/samber/lo"
-	"golang.org/x/xerrors"
 )
 
 // App メインエンジン
@@ -36,12 +34,6 @@ func NewApp(ctx context.Context, logger logger.Logger, sd *streamdeck.Client) (*
 		programSettingStore: setting.NewSettingStore[*programPropertyInspector](),
 	}
 
-	// SDのセットアップ
-	params, err := streamdeck.ParseRegistrationParams(os.Args)
-	if err != nil {
-		return nil, xerrors.Errorf("registration paramsの解析に失敗: %w", err)
-	}
-	app.sd = streamdeck.NewClient(ctx, params)
 	app.setupSD()
 
 	return app, nil
@@ -212,55 +204,44 @@ func (a *App) reconnectionLoop(ctx context.Context, ip string) {
 		a.connectionManager.SetReconnectGoroutineRunning(ip, false)
 		a.logger.Debug(ctx, "reconnectionLoop ip:%s ゴルーチンを終了", ip)
 	}()
-	
+
 	instance, ok := a.connectionManager.SolveATEMByIP(ctx, ip)
 	if !ok {
 		a.logger.Error(ctx, "ATEMが見つかりません")
 		return
 	}
 
-	retryCount := 0
-	maxRetries := 10
-	
+	backoff := time.Second
+	maxBackoff := 30 * time.Second
+
 	for {
 		select {
 		case <-ctx.Done():
 			a.logger.Debug(ctx, "reconnectionLoop ip:%s コンテキストが終了したため終了", ip)
 			return
 		case <-instance.ReconnectCh:
-			a.logger.Debug(ctx, "reconnectionLoop ip:%s 再接続をトリガーしました (試行回数: %d)", ip, retryCount+1)
+			a.logger.Debug(ctx, "reconnectionLoop ip:%s 再接続をトリガーしました", ip)
 			if err := instance.Client.Connect(); err != nil {
-				retryCount++
-				if retryCount >= maxRetries {
-					a.logger.Error(ctx, "reconnectionLoop ip:%s 最大リトライ回数(%d)に達しました", ip, maxRetries)
-					return
-				}
-				
 				// 指数バックオフ: 1秒, 2秒, 4秒, 8秒, 16秒, 30秒(最大)
-				backoffSeconds := 1 << retryCount
-				if backoffSeconds > 30 {
-					backoffSeconds = 30
-				}
-				backoffDuration := time.Duration(backoffSeconds) * time.Second
-				
-				a.logger.Debug(ctx, "reconnectionLoop ip:%s 接続失敗、%v後に再試行 (試行回数: %d/%d)", ip, backoffDuration, retryCount, maxRetries)
-				
+				backoff = min(backoff*2, maxBackoff)
+				a.logger.Debug(ctx, "reconnectionLoop ip:%s 接続失敗、%v後に再試行", ip, backoff)
+
 				// 再試行前に待機
 				select {
 				case <-ctx.Done():
 					return
-				case <-time.After(backoffDuration):
+				case <-time.After(backoff):
 				}
-				
+
 				// 再試行
 				select {
 				case instance.ReconnectCh <- struct{}{}:
 				default:
 				}
 			} else {
-				// 接続成功時はリトライカウントをリセット
-				retryCount = 0
-				a.logger.Debug(ctx, "reconnectionLoop ip:%s 接続成功、リトライカウントをリセット", ip)
+				// 接続成功時はバックオフをリセット
+				backoff = time.Second
+				a.logger.Debug(ctx, "reconnectionLoop ip:%s 接続成功、バックオフをリセット", ip)
 			}
 		}
 	}
