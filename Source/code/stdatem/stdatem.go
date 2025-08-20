@@ -12,7 +12,6 @@ import (
 	"github.com/FlowingSPDG/std-atem/Source/code/setting"
 	"github.com/FlowingSPDG/streamdeck"
 	sdcontext "github.com/FlowingSPDG/streamdeck/context"
-	"github.com/samber/lo"
 )
 
 // App メインエンジン
@@ -38,6 +37,45 @@ func NewApp(ctx context.Context, logger logger.Logger, sd *streamdeck.Client) (*
 	app.setupSD()
 
 	return app, nil
+}
+
+// recomputeTallies 指定IPに紐づく全コンテキストのタリーを再計算
+func (a *App) recomputeTallies(ctx context.Context, ip string, instance *connectionmanager.ATEMInstance) {
+	// 紐づいたContextを取得
+	actions, ok := a.connectionManager.SolveContextsByIP(ctx, ip)
+	if !ok {
+		a.logger.Error(ctx, "recomputeTallies ATEMが見つかりません")
+		return
+	}
+
+	for _, ac := range actions {
+		// 設定を解決（preview/program どちらの設定でもInputを取得できればOK）
+		var (
+			found bool
+			input atem.VideoInputType
+		)
+		if s, ok := a.previewSettingStore.Load(ac.Context); ok {
+			input = s.Input
+			found = true
+		} else if s, ok := a.programSettingStore.Load(ac.Context); ok {
+			input = s.Input
+			found = true
+		}
+		if !found {
+			continue
+		}
+
+		// 現在のPGM/PRVと比較して画像を設定
+		sdctx := sdcontext.WithContext(ctx, ac.Context)
+		switch {
+		case uint8(input) == uint8(instance.Client.ProgramInput.Index):
+			a.sd.SetImage(sdctx, tallyProgram, streamdeck.HardwareAndSoftware)
+		case uint8(input) == uint8(instance.Client.PreviewInput.Index):
+			a.sd.SetImage(sdctx, tallyPreview, streamdeck.HardwareAndSoftware)
+		default:
+			a.sd.SetImage(sdctx, tallyInactive, streamdeck.HardwareAndSoftware)
+		}
+	}
 }
 
 // addATEMHost 新しいATEMホストを追加し、接続をセットアップする
@@ -72,78 +110,11 @@ func (a *App) addATEMHost(ctx context.Context, action string, contextID string, 
 	})
 
 	instance.Client.On("PrvI.change", func() {
-		a.logger.Debug(ctx, "PrvI.change")
-
-		// 紐づいたContextを取得
-		actions, ok := a.connectionManager.SolveContextsByIP(ctx, ip)
-		if !ok {
-			a.logger.Error(ctx, "PrvI.change ATEMが見つかりません")
-			return
-		}
-		a.logger.Debug(ctx, "PrvI.change actions:%v", actions)
-		actions = lo.Filter(actions, func(action connectionmanager.ActionAndContext, _ int) bool {
-			return action.Action == setPreviewAction
-		})
-		a.logger.Debug(ctx, "PrvI.change contexts:%v", actions)
-
-		for _, action := range actions {
-			previewSetting, ok := a.previewSettingStore.Load(action.Context)
-			if !ok {
-				a.logger.Error(ctx, "previewSettingが見つかりません")
-				return
-			}
-
-			// TODO: M/Eが違う場合は無視する
-			a.logger.Debug(ctx, "PrvI.change input:%d meIndex:%d PreviewInput:%v", previewSetting.Input, previewSetting.MeIndex, instance.Client.PreviewInput)
-			isActive := uint8(previewSetting.Input) == uint8(instance.Client.PreviewInput.Index)
-			a.logger.Debug(ctx, "PrvI.change setting:%v actual:%d isActive:%t", previewSetting, instance.Client.PreviewInput.Index, isActive)
-
-			// タリーを反映
-			sdctx := sdcontext.WithContext(ctx, action.Context)
-			if isActive {
-				a.sd.SetImage(sdctx, tallyPreview, streamdeck.HardwareAndSoftware)
-			} else {
-				a.sd.SetImage(sdctx, tallyInactive, streamdeck.HardwareAndSoftware)
-			}
-		}
+		a.recomputeTallies(ctx, ip, instance)
 	})
 
 	instance.Client.On("PrgI.change", func() {
-		a.logger.Debug(ctx, "PrgI.change")
-
-		// 紐づいたContextを取得
-		actions, ok := a.connectionManager.SolveContextsByIP(ctx, ip)
-		if !ok {
-			a.logger.Error(ctx, "PrgI.change ATEMが見つかりません")
-			return
-		}
-		a.logger.Debug(ctx, "PrgI.change actions:%v", actions)
-		actions = lo.Filter(actions, func(action connectionmanager.ActionAndContext, _ int) bool {
-			return action.Action == setProgramAction
-		})
-		a.logger.Debug(ctx, "PrgI.change contexts:%v", actions)
-
-		for _, action := range actions {
-			programSetting, ok := a.programSettingStore.Load(action.Context)
-			if !ok {
-				a.logger.Error(ctx, "PrgI.change programSettingが見つかりません")
-				return
-			}
-
-			// TODO: M/Eが違う場合は無視する
-			a.logger.Debug(ctx, "PrgI.change input:%d meIndex:%d PreviewInput:%v", programSetting.Input, programSetting.MeIndex, instance.Client.ProgramInput.Index)
-			isActive := uint8(programSetting.Input) == uint8(instance.Client.ProgramInput.Index)
-			a.logger.Debug(ctx, "PrgI.change setting:%v actual:%d isActive:%t", programSetting, instance.Client.ProgramInput.Index, isActive)
-
-			// タリーを反映
-			sdctx := sdcontext.WithContext(ctx, action.Context)
-			if isActive {
-				a.sd.SetImage(sdctx, tallyProgram, streamdeck.HardwareAndSoftware)
-			} else {
-				a.sd.SetImage(sdctx, tallyInactive, streamdeck.HardwareAndSoftware)
-			}
-
-		}
+		a.recomputeTallies(ctx, ip, instance)
 	})
 
 	instance.Client.On("closed", func() {
