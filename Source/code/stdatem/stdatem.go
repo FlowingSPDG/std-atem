@@ -51,26 +51,34 @@ func (a *App) recomputeTallies(ctx context.Context, ip string, instance *connect
 	for _, ac := range actions {
 		// 設定を解決（preview/program どちらの設定でもInputを取得できればOK）
 		var (
-			found bool
-			input atem.VideoInputType
+			found    bool
+			input    atem.VideoInputType
+			tallyPRV bool = true
+			tallyPGM bool = true
 		)
 		if s, ok := a.previewSettingStore.Load(ac.Context); ok {
 			input = s.Input
+			tallyPRV = s.TallyPRV
+			tallyPGM = s.TallyPGM
 			found = true
 		} else if s, ok := a.programSettingStore.Load(ac.Context); ok {
 			input = s.Input
+			tallyPRV = s.TallyPRV
+			tallyPGM = s.TallyPGM
 			found = true
 		}
 		if !found {
 			continue
 		}
 
-		// 現在のPGM/PRVと比較して画像を設定
+		// 現在のPGM/PRVと比較して画像を設定（フラグに応じて適用）
 		sdctx := sdcontext.WithContext(ctx, ac.Context)
+		matchPGM := uint8(input) == uint8(instance.Client.ProgramInput.Index) && tallyPGM
+		matchPRV := uint8(input) == uint8(instance.Client.PreviewInput.Index) && tallyPRV
 		switch {
-		case uint8(input) == uint8(instance.Client.ProgramInput.Index):
+		case matchPGM:
 			a.sd.SetImage(sdctx, tallyProgram, streamdeck.HardwareAndSoftware)
-		case uint8(input) == uint8(instance.Client.PreviewInput.Index):
+		case matchPRV:
 			a.sd.SetImage(sdctx, tallyPreview, streamdeck.HardwareAndSoftware)
 		default:
 			a.sd.SetImage(sdctx, tallyInactive, streamdeck.HardwareAndSoftware)
