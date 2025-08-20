@@ -68,22 +68,29 @@ func (a *ConnectionManager) SolveATEMByContext(ctx context.Context, context stri
 
 func (a *ConnectionManager) SolveContextsByIP(ctx context.Context, ip string) ([]ActionAndContext, bool) {
 	a.logger.Debug(ctx, "SolveContextsByIP ip:%s", ip)
+	// スライス同時読み書きのデータレースを避けるため、
+	// storeMutexで保護しつつContextsをスナップショットし、
+	// ロックを解放してから結果を構築する
+	a.storeMutex.Lock()
 	info, ok := a.connections.Load(ip)
 	if !ok {
+		a.storeMutex.Unlock()
 		a.logger.Error(ctx, "SolveContextsByIP ip:%s not found", ip)
 		return nil, false
 	}
+	contextsSnapshot := make([]string, len(info.Contexts))
+	copy(contextsSnapshot, info.Contexts)
+	a.storeMutex.Unlock()
 
-	// ActionAndContextの配列に変換
-	contexts := make([]ActionAndContext, 0, len(info.Contexts))
-	for _, contextID := range info.Contexts {
+	result := make([]ActionAndContext, 0, len(contextsSnapshot))
+	for _, contextID := range contextsSnapshot {
 		action, _ := a.actions.Load(contextID)
-		contexts = append(contexts, ActionAndContext{
+		result = append(result, ActionAndContext{
 			Action:  action,
 			Context: contextID,
 		})
 	}
-	return contexts, true
+	return result, true
 }
 
 func (a *ConnectionManager) Store(ctx context.Context, action, ip, contextID string, at *ATEMInstance) {
