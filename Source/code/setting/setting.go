@@ -2,7 +2,6 @@ package setting
 
 import "github.com/puzpuzpuz/xsync/v3"
 
-
 type TallyMode int
 
 const (
