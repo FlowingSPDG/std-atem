@@ -1,0 +1,39 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.23'
+        
+    - name: Install Task
+      uses: arduino/setup-task@v1
+      with:
+        version: '3.x'
+        repo-token: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Run setup
+      run: task setup
+      
+    - name: Build
+      run: task build
+      
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: atem-plugin
+        path: ${{ github.workspace }}/dev.flowingspdg.atem.sdPlugin/
+        if-no-files-found: error

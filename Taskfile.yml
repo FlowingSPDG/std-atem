@@ -1,60 +1,89 @@
 version: '3'
 
-
 includes:
   vars: 
     taskfile: TaskfileVars.yml
     flatten: true
   build: 
-    taskfile: ./Taskfile_{{OS}}.yml
+    taskfile: |
+      {{if .WSL_DISTRO_NAME}}
+      ./Taskfile_wsl.yml
+      {{else}}
+      ./Taskfile_{{OS}}.yml
+      {{end}}
     flatten: true
+    optional: true
 
 tasks:
   test:
+    desc: Run Go tests
     dir: Source/code
     cmds:
       - go test -v ./...
+    silent: false
+  
   vet:
+    desc: Run Go vet
     dir: Source/code
     cmds:
       - go vet ./...
+    silent: false
+  
   setup-server:
+    desc: Download Go modules
     dir: Source/code
     cmds: 
       - go mod download
+    silent: false
+  
   setup:
+    desc: Setup project dependencies
     deps:
       - setup-server
 
-  build-server-windows:
-    dir: Source/code
-    cmds: 
-      - go build -o ../../{{.AppName}}/atem_go.exe ./cmd/main.go
-    env:
-      GOOS: windows
-  build-server-darwin:
-    dir: Source/code
-    cmds: 
-      - go build -o ../../{{.AppName}}/atem_go ./cmd/main.go
-    env:
-      GOOS: darwin
-
   build-server:
-    deps:
-      - build-server-windows
-      - build-server-darwin
+    desc: Build server for current OS (Windows/Darwin/WSL2)
+    dir: Source/code
+    cmds: 
+      - |
+        if [ "$OS" = "windows" ] || [ -n "$WSL_DISTRO_NAME" ]; then
+          go build -o ../../{{.AppName}}/atem_go.exe ./cmd/main.go
+        else
+          go build -o ../../{{.AppName}}/atem_go ./cmd/main.go
+        fi
+      - |
+        if [ -n "$WSL_DISTRO_NAME" ]; then
+          GOOS=darwin go build -o ../../{{.AppName}}/atem_go ./cmd/main.go
+        fi
+    env:
+      GOOS: '{{if .WSL_DISTRO_NAME}}windows{{else}}{{OS}}{{end}}'
+    silent: false
+  
   build:
+    desc: Build complete application
     deps:
       - clean
       - build-server
     cmds:
-      - cp -r Source/images {{.AppName}}
-      - cp -r Source/manifest.json {{.AppName}}
-      - cp -r Source/pi/* {{.AppName}}/inspector
+      - |
+        if [ -d "Source/images" ]; then
+          cp -r Source/images {{.AppName}}
+        fi
+      - |
+        if [ -f "Source/manifest.json" ]; then
+          cp -r Source/manifest.json {{.AppName}}
+        fi
+      - |
+        if [ -d "Source/pi" ]; then
+          cp -r Source/pi/* {{.AppName}}/inspector
+        fi
+    silent: false
 
   clean:
+    desc: Clean build artifacts
     cmds:
       - rm -rf {{.AppName}}/*
       - rm -rf {{.ReleaseDir}}/*
       - mkdir -p {{.ReleaseDir}}
       - mkdir -p {{.AppName}}/inspector
+    silent: false
