@@ -2,11 +2,6 @@ package setting
 
 import "github.com/puzpuzpuz/xsync/v3"
 
-// Setting defines the common interface for all settings
-// 実際に使用されるメソッドのみを定義
-type Setting interface {
-	// 必要に応じてメソッドを追加
-}
 
 type TallyMode int
 
