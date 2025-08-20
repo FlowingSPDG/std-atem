@@ -3,6 +3,7 @@ package stdatem
 import (
 	"context"
 	"fmt"
+	"net"
 	"time"
 
 	"github.com/FlowingSPDG/go-atem"
@@ -43,6 +44,14 @@ func NewApp(ctx context.Context, logger logger.Logger, sd *streamdeck.Client) (*
 func (a *App) addATEMHost(ctx context.Context, action string, contextID string, ip string, debug bool) error {
 	msg := fmt.Sprintf("ATEMホスト %s を追加中...", ip)
 	a.logger.Debug(ctx, msg)
+
+	// 空IPや不正なIPは無視（PI入力中のスパム防止）
+	if ip == "" {
+		return nil
+	}
+	if parsed := net.ParseIP(ip); parsed == nil || parsed.To4() == nil {
+		return nil
+	}
 
 	if instance, ok := a.connectionManager.SolveATEMByIP(ctx, ip); ok {
 		a.logger.Debug(ctx, "ATEMホスト %s は既に存在します", ip)
@@ -153,12 +162,14 @@ func (a *App) addATEMHost(ctx context.Context, action string, contextID string, 
 	})
 
 	// 再接続ゴルーチンを開始（まだ実行されていない場合のみ）
-	if !a.connectionManager.IsReconnectGoroutineRunning(ip) {
+	if ip != "" && !a.connectionManager.IsReconnectGoroutineRunning(ip) {
 		a.connectionManager.SetReconnectGoroutineRunning(ip, true)
 		go a.reconnectionLoop(ctx, ip)
 		a.logger.Debug(ctx, "addATEMHost ip:%s 再接続ゴルーチンを開始", ip)
 	}
-	instance.ReconnectCh <- struct{}{}
+	if ip != "" {
+		instance.ReconnectCh <- struct{}{}
+	}
 
 	return nil
 }

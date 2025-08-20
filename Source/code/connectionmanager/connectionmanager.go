@@ -32,6 +32,7 @@ type ConnectionInfo struct {
 type ConnectionManager struct {
 	connections *xsync.MapOf[string, *ConnectionInfo] // IP -> ConnectionInfo
 	contexts    *xsync.MapOf[string, string]          // Context -> IP
+	actions     *xsync.MapOf[string, string]          // Context -> Action
 	logger      logger.Logger
 	storeMutex  sync.Mutex // mutex for atomic Store operations
 }
@@ -40,6 +41,7 @@ func NewConnectionManager(logger logger.Logger) *ConnectionManager {
 	return &ConnectionManager{
 		connections: xsync.NewMapOf[*ConnectionInfo](),
 		contexts:    xsync.NewMapOf[string](),
+		actions:     xsync.NewMapOf[string](),
 		logger:      logger,
 	}
 }
@@ -75,10 +77,9 @@ func (a *ConnectionManager) SolveContextsByIP(ctx context.Context, ip string) ([
 	// ActionAndContextの配列に変換
 	contexts := make([]ActionAndContext, 0, len(info.Contexts))
 	for _, contextID := range info.Contexts {
-		// ここではActionを特定できないため、空文字列を設定
-		// 必要に応じて、context -> action のマッピングを追加
+		action, _ := a.actions.Load(contextID)
 		contexts = append(contexts, ActionAndContext{
-			Action:  "", // TODO: action情報を追加する必要がある場合
+			Action:  action,
 			Context: contextID,
 		})
 	}
@@ -124,6 +125,7 @@ func (a *ConnectionManager) Store(ctx context.Context, action, ip, contextID str
 
 	a.connections.Store(ip, info)
 	a.contexts.Store(contextID, ip)
+	a.actions.Store(contextID, action)
 }
 
 func (a *ConnectionManager) DeleteATEMByIP(ctx context.Context, ip string) {
@@ -156,6 +158,7 @@ func (a *ConnectionManager) DeleteATEMByContext(ctx context.Context, contextID s
 	}
 
 	a.contexts.Delete(contextID)
+	a.actions.Delete(contextID)
 	a.removeContextFromIP(ctx, contextID, ip)
 }
 
