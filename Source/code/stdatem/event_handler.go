@@ -2,10 +2,10 @@ package stdatem
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/FlowingSPDG/streamdeck"
+	sdcontext "github.com/FlowingSPDG/streamdeck/context"
 	"golang.org/x/xerrors"
 )
 
@@ -20,14 +20,8 @@ func NewBaseEventHandler[T any](app *App) *BaseEventHandler[T] {
 }
 
 // HandleWillAppear 共通のWillAppear処理
-func (h *BaseEventHandler[T]) HandleWillAppear(ctx context.Context, client *streamdeck.Client, event streamdeck.Event, action string, settingsParser func(T) (interface{}, error)) error {
-	var payload streamdeck.WillAppearPayload[T]
-	if err := json.Unmarshal(event.Payload, &payload); err != nil {
-		h.app.logger.Error(ctx, fmt.Sprintf("payloadのアンマーシャルに失敗: %v", err))
-		return xerrors.Errorf("payloadのアンマーシャルに失敗: %w", err)
-	}
-
-	parsed, err := settingsParser(payload.Settings)
+func (h *BaseEventHandler[T]) HandleWillAppear(ctx context.Context, client *streamdeck.Client, p streamdeck.WillAppearPayload[T], action string, settingsParser func(T) (interface{}, error)) error {
+	parsed, err := settingsParser(p.Settings)
 	if err != nil {
 		h.app.logger.Error(ctx, fmt.Sprintf("payloadのパースに失敗: %v", err))
 		return xerrors.Errorf("payloadのパースに失敗: %w", err)
@@ -49,29 +43,20 @@ func (h *BaseEventHandler[T]) HandleWillAppear(ctx context.Context, client *stre
 	msg := fmt.Sprintf("%s %#v でWillAppear", action, parsed)
 	h.app.logger.Debug(ctx, msg)
 
-	return h.app.addATEMHost(ctx, action, event.Context, ip, false)
+	contextID := sdcontext.Context(ctx)
+	return h.app.addATEMHost(ctx, action, contextID, ip, false)
 }
 
 // HandleWillDisappear 共通のWillDisappear処理
-func (h *BaseEventHandler[T]) HandleWillDisappear(ctx context.Context, client *streamdeck.Client, event streamdeck.Event) error {
-	var payload streamdeck.WillDisappearPayload[T]
-	if err := json.Unmarshal(event.Payload, &payload); err != nil {
-		h.app.logger.Error(ctx, fmt.Sprintf("payloadのアンマーシャルに失敗: %v", err))
-		return xerrors.Errorf("payloadのアンマーシャルに失敗: %w", err)
-	}
-	h.app.handleDisappear(ctx, event.Context)
+func (h *BaseEventHandler[T]) HandleWillDisappear(ctx context.Context, client *streamdeck.Client, p streamdeck.WillDisappearPayload[T]) error {
+	contextID := sdcontext.Context(ctx)
+	h.app.handleDisappear(ctx, contextID)
 	return nil
 }
 
 // HandleKeyDown 共通のKeyDown処理
-func (h *BaseEventHandler[T]) HandleKeyDown(ctx context.Context, client *streamdeck.Client, event streamdeck.Event, action string, settingsParser func(T) (interface{}, error), actionHandler func(interface{}) error) error {
-	var payload streamdeck.KeyDownPayload[T]
-	if err := json.Unmarshal(event.Payload, &payload); err != nil {
-		h.app.logger.Error(ctx, fmt.Sprintf("payloadのアンマーシャルに失敗: %v", err))
-		return xerrors.Errorf("payloadのアンマーシャルに失敗: %w", err)
-	}
-
-	parsed, err := settingsParser(payload.Settings)
+func (h *BaseEventHandler[T]) HandleKeyDown(ctx context.Context, client *streamdeck.Client, p streamdeck.KeyDownPayload[T], action string, settingsParser func(T) (interface{}, error), actionHandler func(interface{}) error) error {
+	parsed, err := settingsParser(p.Settings)
 	if err != nil {
 		h.app.logger.Error(ctx, fmt.Sprintf("payloadのパースに失敗: %v", err))
 		return xerrors.Errorf("payloadのパースに失敗: %w", err)
@@ -80,7 +65,8 @@ func (h *BaseEventHandler[T]) HandleKeyDown(ctx context.Context, client *streamd
 	msg := fmt.Sprintf("%s %v でKeyDown", action, parsed)
 	h.app.logger.Debug(ctx, msg)
 
-	_, ok := h.app.connectionManager.SolveATEMByContext(ctx, event.Context)
+	contextID := sdcontext.Context(ctx)
+	_, ok := h.app.connectionManager.SolveATEMByContext(ctx, contextID)
 	if !ok {
 		h.app.logger.Error(ctx, "%s ATEMが見つかりません", action)
 		return xerrors.Errorf("%s ATEMが見つかりません", action)
@@ -95,14 +81,8 @@ func (h *BaseEventHandler[T]) HandleKeyDown(ctx context.Context, client *streamd
 }
 
 // HandleDidReceiveSettings 共通のDidReceiveSettings処理
-func (h *BaseEventHandler[T]) HandleDidReceiveSettings(ctx context.Context, client *streamdeck.Client, event streamdeck.Event, action string, settingsParser func(T) (interface{}, error)) error {
-	var payload streamdeck.DidReceiveSettingsPayload[T]
-	if err := json.Unmarshal(event.Payload, &payload); err != nil {
-		h.app.logger.Error(ctx, fmt.Sprintf("payloadのアンマーシャルに失敗: %v", err))
-		return xerrors.Errorf("payloadのアンマーシャルに失敗: %w", err)
-	}
-
-	parsed, err := settingsParser(payload.Settings)
+func (h *BaseEventHandler[T]) HandleDidReceiveSettings(ctx context.Context, client *streamdeck.Client, p streamdeck.DidReceiveSettingsPayload[T], action string, settingsParser func(T) (interface{}, error)) error {
+	parsed, err := settingsParser(p.Settings)
 	if err != nil {
 		h.app.logger.Error(ctx, fmt.Sprintf("payloadのパースに失敗: %v", err))
 		return xerrors.Errorf("payloadのパースに失敗: %w", err)
@@ -121,11 +101,12 @@ func (h *BaseEventHandler[T]) HandleDidReceiveSettings(ctx context.Context, clie
 		return xerrors.New("unsupported settings type")
 	}
 
+	contextID := sdcontext.Context(ctx)
 	// Handle IP change if this context was using a different IP
-	h.app.connectionManager.UpdateContextIP(ctx, event.Context, ip)
+	h.app.connectionManager.UpdateContextIP(ctx, contextID, ip)
 
 	// 新しいインスタンスを初期化
-	if err := h.app.addATEMHost(ctx, action, event.Context, ip, true); err != nil {
+	if err := h.app.addATEMHost(ctx, action, contextID, ip, true); err != nil {
 		return xerrors.Errorf("ATEMホストの追加に失敗: %w", err)
 	}
 

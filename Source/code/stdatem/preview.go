@@ -4,11 +4,12 @@ import (
 	"context"
 
 	"github.com/FlowingSPDG/streamdeck"
+	sdcontext "github.com/FlowingSPDG/streamdeck/context"
 	"golang.org/x/xerrors"
 )
 
 // PRVWillAppearHandler ATEM PRVを設定
-func (a *App) PRVWillAppearHandler(ctx context.Context, client *streamdeck.Client, event streamdeck.Event) error {
+func (a *App) PRVWillAppearHandler(ctx context.Context, client *streamdeck.Client, p streamdeck.WillAppearPayload[*PreviewPropertyInspector]) error {
 	handler := NewBaseEventHandler[*PreviewPropertyInspector](a)
 
 	settingsParser := func(settings *PreviewPropertyInspector) (interface{}, error) {
@@ -16,21 +17,22 @@ func (a *App) PRVWillAppearHandler(ctx context.Context, client *streamdeck.Clien
 		if err != nil {
 			return nil, err
 		}
-		a.previewSettingStore.Store(event.Context, parsed)
+		contextID := sdcontext.Context(ctx)
+		a.previewSettingStore.Store(contextID, parsed)
 		return parsed, nil
 	}
 
-	return handler.HandleWillAppear(ctx, client, event, setPreviewAction, settingsParser)
+	return handler.HandleWillAppear(ctx, client, p, setPreviewAction, settingsParser)
 }
 
 // PRVWillDisappearHandler プレビューのボタン非表示を処理
-func (a *App) PRVWillDisappearHandler(ctx context.Context, client *streamdeck.Client, event streamdeck.Event) error {
+func (a *App) PRVWillDisappearHandler(ctx context.Context, client *streamdeck.Client, p streamdeck.WillDisappearPayload[*PreviewPropertyInspector]) error {
 	handler := NewBaseEventHandler[*PreviewPropertyInspector](a)
-	return handler.HandleWillDisappear(ctx, client, event)
+	return handler.HandleWillDisappear(ctx, client, p)
 }
 
 // PRVKeyDownHandler ATEM PRVを設定
-func (a *App) PRVKeyDownHandler(ctx context.Context, client *streamdeck.Client, event streamdeck.Event) error {
+func (a *App) PRVKeyDownHandler(ctx context.Context, client *streamdeck.Client, p streamdeck.KeyDownPayload[*PreviewPropertyInspector]) error {
 	handler := NewBaseEventHandler[*PreviewPropertyInspector](a)
 
 	settingsParser := func(settings *PreviewPropertyInspector) (interface{}, error) {
@@ -43,7 +45,8 @@ func (a *App) PRVKeyDownHandler(ctx context.Context, client *streamdeck.Client, 
 			return xerrors.New("invalid settings type")
 		}
 
-		instance, ok := a.connectionManager.SolveATEMByContext(ctx, event.Context)
+		contextID := sdcontext.Context(ctx)
+		instance, ok := a.connectionManager.SolveATEMByContext(ctx, contextID)
 		if !ok {
 			return xerrors.New("ATEM instance not found")
 		}
@@ -53,11 +56,11 @@ func (a *App) PRVKeyDownHandler(ctx context.Context, client *streamdeck.Client, 
 		return nil
 	}
 
-	return handler.HandleKeyDown(ctx, client, event, setPreviewAction, settingsParser, actionHandler)
+	return handler.HandleKeyDown(ctx, client, p, setPreviewAction, settingsParser, actionHandler)
 }
 
 // PRVDidReceiveSettingsHandler PRVの設定を受け取る
-func (a *App) PRVDidReceiveSettingsHandler(ctx context.Context, client *streamdeck.Client, event streamdeck.Event) error {
+func (a *App) PRVDidReceiveSettingsHandler(ctx context.Context, client *streamdeck.Client, p streamdeck.DidReceiveSettingsPayload[*PreviewPropertyInspector]) error {
 	handler := NewBaseEventHandler[*PreviewPropertyInspector](a)
 
 	settingsParser := func(settings *PreviewPropertyInspector) (interface{}, error) {
@@ -65,9 +68,10 @@ func (a *App) PRVDidReceiveSettingsHandler(ctx context.Context, client *streamde
 		if err != nil {
 			return nil, err
 		}
-		a.previewSettingStore.Store(event.Context, parsed)
+		contextID := sdcontext.Context(ctx)
+		a.previewSettingStore.Store(contextID, parsed)
 		return parsed, nil
 	}
 
-	return handler.HandleDidReceiveSettings(ctx, client, event, setPreviewAction, settingsParser)
+	return handler.HandleDidReceiveSettings(ctx, client, p, setPreviewAction, settingsParser)
 }

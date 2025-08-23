@@ -9,28 +9,6 @@ import (
 	"github.com/FlowingSPDG/std-atem/Source/code/connectionmanager"
 )
 
-// mockLogger implements logger.Logger for testing
-type mockLogger struct {
-	debugCalls []string
-	errorCalls []string
-}
-
-func (m *mockLogger) LogMessage(ctx context.Context, format string, args ...any) error { return nil }
-
-func (m *mockLogger) Debug(ctx context.Context, format string, args ...any) error {
-	m.debugCalls = append(m.debugCalls, format)
-	return nil
-}
-
-func (m *mockLogger) Info(ctx context.Context, format string, args ...any) error { return nil }
-
-func (m *mockLogger) Warn(ctx context.Context, format string, args ...any) error { return nil }
-
-func (m *mockLogger) Error(ctx context.Context, format string, args ...any) error {
-	m.errorCalls = append(m.errorCalls, format)
-	return nil
-}
-
 // Note: Due to the concrete type dependency in go-atem, we'll use integration-style tests
 // rather than mocking the ATEM client directly. The reconnection logic can still be tested
 // through the ConnectionManager interface.

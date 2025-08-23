@@ -4,11 +4,12 @@ import (
 	"context"
 
 	"github.com/FlowingSPDG/streamdeck"
+	sdcontext "github.com/FlowingSPDG/streamdeck/context"
 	"golang.org/x/xerrors"
 )
 
 // PGMWillAppearHandler ATEM PGMを設定
-func (a *App) PGMWillAppearHandler(ctx context.Context, client *streamdeck.Client, event streamdeck.Event) error {
+func (a *App) PGMWillAppearHandler(ctx context.Context, client *streamdeck.Client, p streamdeck.WillAppearPayload[*ProgramPropertyInspector]) error {
 	handler := NewBaseEventHandler[*ProgramPropertyInspector](a)
 
 	settingsParser := func(settings *ProgramPropertyInspector) (interface{}, error) {
@@ -16,21 +17,22 @@ func (a *App) PGMWillAppearHandler(ctx context.Context, client *streamdeck.Clien
 		if err != nil {
 			return nil, err
 		}
-		a.programSettingStore.Store(event.Context, parsed)
+		contextID := sdcontext.Context(ctx)
+		a.programSettingStore.Store(contextID, parsed)
 		return parsed, nil
 	}
 
-	return handler.HandleWillAppear(ctx, client, event, setProgramAction, settingsParser)
+	return handler.HandleWillAppear(ctx, client, p, setProgramAction, settingsParser)
 }
 
 // PGMWillDisappearHandler プログラムのボタン非表示を処理
-func (a *App) PGMWillDisappearHandler(ctx context.Context, client *streamdeck.Client, event streamdeck.Event) error {
+func (a *App) PGMWillDisappearHandler(ctx context.Context, client *streamdeck.Client, p streamdeck.WillDisappearPayload[*ProgramPropertyInspector]) error {
 	handler := NewBaseEventHandler[*ProgramPropertyInspector](a)
-	return handler.HandleWillDisappear(ctx, client, event)
+	return handler.HandleWillDisappear(ctx, client, p)
 }
 
 // PGMKeyDownHandler ATEM PGMを設定
-func (a *App) PGMKeyDownHandler(ctx context.Context, client *streamdeck.Client, event streamdeck.Event) error {
+func (a *App) PGMKeyDownHandler(ctx context.Context, client *streamdeck.Client, p streamdeck.KeyDownPayload[*ProgramPropertyInspector]) error {
 	handler := NewBaseEventHandler[*ProgramPropertyInspector](a)
 
 	settingsParser := func(settings *ProgramPropertyInspector) (interface{}, error) {
@@ -43,7 +45,8 @@ func (a *App) PGMKeyDownHandler(ctx context.Context, client *streamdeck.Client, 
 			return xerrors.New("invalid settings type")
 		}
 
-		instance, ok := a.connectionManager.SolveATEMByContext(ctx, event.Context)
+		contextID := sdcontext.Context(ctx)
+		instance, ok := a.connectionManager.SolveATEMByContext(ctx, contextID)
 		if !ok {
 			return xerrors.New("ATEM instance not found")
 		}
@@ -53,11 +56,11 @@ func (a *App) PGMKeyDownHandler(ctx context.Context, client *streamdeck.Client, 
 		return nil
 	}
 
-	return handler.HandleKeyDown(ctx, client, event, setProgramAction, settingsParser, actionHandler)
+	return handler.HandleKeyDown(ctx, client, p, setProgramAction, settingsParser, actionHandler)
 }
 
 // PGMDidReceiveSettingsHandler PGMの設定を受け取る
-func (a *App) PGMDidReceiveSettingsHandler(ctx context.Context, client *streamdeck.Client, event streamdeck.Event) error {
+func (a *App) PGMDidReceiveSettingsHandler(ctx context.Context, client *streamdeck.Client, p streamdeck.DidReceiveSettingsPayload[*ProgramPropertyInspector]) error {
 	handler := NewBaseEventHandler[*ProgramPropertyInspector](a)
 
 	settingsParser := func(settings *ProgramPropertyInspector) (interface{}, error) {
@@ -65,9 +68,10 @@ func (a *App) PGMDidReceiveSettingsHandler(ctx context.Context, client *streamde
 		if err != nil {
 			return nil, err
 		}
-		a.programSettingStore.Store(event.Context, parsed)
+		contextID := sdcontext.Context(ctx)
+		a.programSettingStore.Store(contextID, parsed)
 		return parsed, nil
 	}
 
-	return handler.HandleDidReceiveSettings(ctx, client, event, setProgramAction, settingsParser)
+	return handler.HandleDidReceiveSettings(ctx, client, p, setProgramAction, settingsParser)
 }

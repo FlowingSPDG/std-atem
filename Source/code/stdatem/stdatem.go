@@ -12,6 +12,7 @@ import (
 	"github.com/FlowingSPDG/std-atem/Source/code/setting"
 	"github.com/FlowingSPDG/streamdeck"
 	sdcontext "github.com/FlowingSPDG/streamdeck/context"
+	"golang.org/x/xerrors"
 )
 
 // App メインエンジン
@@ -161,29 +162,28 @@ func (a *App) Run(ctx context.Context) error {
 // setupSD StreamDeckクライアントをセットアップ
 func (a *App) setupSD() {
 	setPreviewAction := a.sd.Action(setPreviewAction)
-	setPreviewAction.RegisterHandler(streamdeck.KeyDown, a.PRVKeyDownHandler)
-	setPreviewAction.RegisterHandler(streamdeck.WillAppear, a.PRVWillAppearHandler)
-	setPreviewAction.RegisterHandler(streamdeck.WillDisappear, a.PRVWillDisappearHandler)
-	setPreviewAction.RegisterHandler(streamdeck.DidReceiveSettings, a.PRVDidReceiveSettingsHandler)
+	streamdeck.OnKeyDown[*PreviewPropertyInspector](setPreviewAction, a.PRVKeyDownHandler)
+	streamdeck.OnWillAppear[*PreviewPropertyInspector](setPreviewAction, a.PRVWillAppearHandler)
+	streamdeck.OnWillDisappear[*PreviewPropertyInspector](setPreviewAction, a.PRVWillDisappearHandler)
+	streamdeck.OnDidReceiveSettings[*PreviewPropertyInspector](setPreviewAction, a.PRVDidReceiveSettingsHandler)
 
 	setProgramAction := a.sd.Action(setProgramAction)
-	setProgramAction.RegisterHandler(streamdeck.KeyDown, a.PGMKeyDownHandler)
-	setProgramAction.RegisterHandler(streamdeck.WillAppear, a.PGMWillAppearHandler)
-	setProgramAction.RegisterHandler(streamdeck.WillDisappear, a.PGMWillDisappearHandler)
-	setProgramAction.RegisterHandler(streamdeck.DidReceiveSettings, a.PGMDidReceiveSettingsHandler)
+	streamdeck.OnKeyDown[*ProgramPropertyInspector](setProgramAction, a.PGMKeyDownHandler)
+	streamdeck.OnWillAppear[*ProgramPropertyInspector](setProgramAction, a.PGMWillAppearHandler)
+	streamdeck.OnWillDisappear[*ProgramPropertyInspector](setProgramAction, a.PGMWillDisappearHandler)
+	streamdeck.OnDidReceiveSettings[*ProgramPropertyInspector](setProgramAction, a.PGMDidReceiveSettingsHandler)
 
 	cutAction := a.sd.Action(cutAction)
-	cutAction.RegisterHandler(streamdeck.KeyDown, a.CutKeyDownHandler)
-	cutAction.RegisterHandler(streamdeck.WillAppear, a.CutWillAppearHandler)
-	cutAction.RegisterHandler(streamdeck.WillDisappear, a.CutWillDisappearHandler)
-	cutAction.RegisterHandler(streamdeck.DidReceiveSettings, a.CutDidReceiveSettingsHandler)
+	streamdeck.OnKeyDown[*AutoPropertyInspector](cutAction, a.CutKeyDownHandler)
+	streamdeck.OnWillAppear[*AutoPropertyInspector](cutAction, a.CutWillAppearHandler)
+	streamdeck.OnWillDisappear[*AutoPropertyInspector](cutAction, a.CutWillDisappearHandler)
+	streamdeck.OnDidReceiveSettings[*AutoPropertyInspector](cutAction, a.CutDidReceiveSettingsHandler)
 
 	autoAction := a.sd.Action(autoAction)
-	autoAction.RegisterHandler(streamdeck.KeyDown, a.AutoKeyDownHandler)
-	autoAction.RegisterHandler(streamdeck.WillAppear, a.AutoWillAppearHandler)
-	autoAction.RegisterHandler(streamdeck.WillDisappear, a.AutoWillDisappearHandler)
-	autoAction.RegisterHandler(streamdeck.DidReceiveSettings, a.AutoDidReceiveSettingsHandler)
-
+	streamdeck.OnKeyDown[*AutoPropertyInspector](autoAction, a.AutoKeyDownHandler)
+	streamdeck.OnWillAppear[*AutoPropertyInspector](autoAction, a.AutoWillAppearHandler)
+	streamdeck.OnWillDisappear[*AutoPropertyInspector](autoAction, a.AutoWillDisappearHandler)
+	streamdeck.OnDidReceiveSettings[*AutoPropertyInspector](autoAction, a.AutoDidReceiveSettingsHandler)
 }
 
 // reconnectionLoop 特定のATEMホストの自動再接続を処理
@@ -346,7 +346,7 @@ func Run(ctx context.Context, logger logger.Logger, sd *streamdeck.Client) error
 	// アプリケーションを初期化
 	app, err := NewApp(ctx, logger, sd)
 	if err != nil {
-		return fmt.Errorf("アプリの初期化に失敗: %w", err)
+		return xerrors.Errorf("アプリの初期化に失敗: %w", err)
 	}
 
 	// アプリケーションを実行
